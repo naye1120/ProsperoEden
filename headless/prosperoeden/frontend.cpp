@@ -132,7 +132,7 @@ void LoadLanguage(pe::gfx::Font& font) {
                  font.system_fonts_read().c_str());
     // For a report from another console: what is shown depends on both.
     Eden::BootTrace::Line("system language %s (%d, rc %#x), menu texts %s; console fonts: %zu in %s", tag.c_str(),
-                          system_language, static_cast<unsigned>(rc), catalog.c_str(), files, folder.c_str());
+                          system_language, static_cast<unsigned>(rc), catalog.c_str(), files, folders_text.c_str());
 }
 
 #ifdef EDEN_DEV_ROM_ID
