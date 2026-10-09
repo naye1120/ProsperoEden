@@ -1,5 +1,6 @@
 // Host check of the JSON settings store (settings_store.h) and its migration from the earlier
 // text files. Build: c++ -std=c++20 -I<nlohmann include> preferences_check.cpp && ./a.out
+#include "game_name.h"
 #include "preferences.h"
 #include <cassert>
 #include <fstream>
@@ -11,7 +12,26 @@ static std::string Read(const std::string& path) {
     return {std::istreambuf_iterator<char>(in), {}};
 }
 
+// A game's name as the Library shows it (game_name.h).
+static void CheckGameNames() {
+    assert(Eden::UsableName("Sky Shepherds") && Eden::UsableName("\xe3\x82\xb2\xe3\x83\xbc\xe3\x83\xa0"));
+    // Not names: nothing, blanks, a question mark, a private-use character, bytes that are not text.
+    assert(!Eden::UsableName("") && !Eden::UsableName("  ") && !Eden::UsableName("?") && !Eden::UsableName("\xef\xa3\xbf"));
+    assert(!Eden::UsableName("\x83\x51\x81\x5b\x83\x80") && !Eden::UsableName("Ember \xff Knights") &&
+           !Eden::UsableName("\xc0\xaf") && !Eden::UsableName("\xed\xa0\x80") && !Eden::UsableName("\xe2\x85"));
+    assert(!Eden::UsableName("\xef\xbf\xbd") && !Eden::UsableName("\xe3\x80\x80"));
+    // Look-alike characters become the plain letters: a sequel's Roman numeral, full-width Latin.
+    assert(Eden::PlainName("EMBER KNIGHTS \xe2\x85\xa1") == "EMBER KNIGHTS II");
+    assert(Eden::PlainName("Part \xe2\x85\xab, \xe2\x85\xb3") == "Part XII, iv");
+    assert(Eden::PlainName("\xef\xbc\xa1\xef\xbd\x82\xef\xbc\x91\xe3\x80\x80\xef\xbc\x81") == "Ab1 !");
+    assert(Eden::PlainName("  Moss & Lantern\xe2\x84\xa2 ") == "Moss & Lantern\xe2\x84\xa2");
+    assert(Eden::PlainName("\xe3\x82\xb2\xe3\x83\xbc\xe3\x83\xa0") == "\xe3\x82\xb2\xe3\x83\xbc\xe3\x83\xa0");
+    assert(Eden::PlainName("\x83\x51") == "\x83\x51");  // not text: left as it is
+    std::puts("Game names: text or not, and look-alike characters as plain letters PASS");
+}
+
 int main() {
+    CheckGameNames();
     char directory[] = "/tmp/eden-settings-XXXXXX";
     assert(mkdtemp(directory));
     const std::string file = std::string(directory) + "/prosperoeden.json";
@@ -225,11 +245,14 @@ int main() {
         game.mute = 1;
         game.vibration = 0;
         game.language = 13;
+        game.controller = 3;  // left Joy-Con
         game.own_mapping = true;
         game.mapping = Eden::Assign(Eden::kDefaultMapping, Eden::game_a, Eden::pad_triangle);
         game.performance[2] = 1;  // fast GPU
         assert(Eden::SaveGameSettings(quest, game, file));
         const auto back = Eden::LoadGameSettings(quest, file);
+        assert(back.controller == 3 && Eden::PreferencesFor(quest, file).controller == 3 &&
+               Eden::PreferencesFor(racer, file).controller == -1 && Eden::LoadPreferences(file).controller == -1);
         assert(back.hud == 0 && back.volume == 40 && back.mute == 1 && back.vibration == 0 && back.language == 13 &&
                back.own_mapping && back.mapping == game.mapping && back.performance[2] == 1 &&
                back.performance[0] == -1);

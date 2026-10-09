@@ -6,6 +6,7 @@
 
 #include "assets_dir.h"
 #include "audio_out_init.h"
+#include "boot_trace.h"
 #include "diagnostics.h"
 #include "eden_services.h"
 #include "update_notice.h"
@@ -23,6 +24,9 @@
 #include "crash_trigger.h"
 #include "development_input.h"
 #include "stop_limit.h"
+#include "system_keyboard.h"
+#include <atomic>
+#include <thread>
 #include <cerrno>
 #include <fstream>
 #endif
@@ -126,6 +130,9 @@ void LoadLanguage(pe::gfx::Font& font) {
                  static_cast<unsigned>(rc), tag.c_str(), catalog.c_str(), texts);
     std::fprintf(stderr, "EDEN_FONTS folders=%s files=%zu read=%s\n", folders_text.c_str(), files,
                  font.system_fonts_read().c_str());
+    // For a report from another console: what is shown depends on both.
+    Eden::BootTrace::Line("system language %s (%d, rc %#x), menu texts %s; console fonts: %zu in %s", tag.c_str(),
+                          system_language, static_cast<unsigned>(rc), catalog.c_str(), files, folder.c_str());
 }
 
 #ifdef EDEN_DEV_ROM_ID
@@ -267,6 +274,25 @@ std::string RunApp(const std::string& launch_error, bool first_start) {
                 if (std::remove(Eden::AppFile("quit-app.txt").c_str()) == 0) {
                     std::fprintf(stderr, "EDEN_DEV_QUIT requested=1\n");
                     running = false;
+                }
+                // The check that the PS5 keyboard opens (system_keyboard.h): asked for from the
+                // launcher, left open for a few seconds, closed again.
+                if (std::remove(Eden::AppFile("keyboard-test.txt").c_str()) == 0) {
+                    std::thread([] {
+                        std::atomic<bool> stop{false};
+                        std::thread closer([&stop] {
+                            std::this_thread::sleep_for(std::chrono::seconds(6));
+                            stop = true;
+                        });
+                        Eden::TextRequest request;
+                        request.title = u"ProsperoEden";
+                        request.initial = u"Eden";
+                        request.max_length = 16;
+                        const Eden::TextAnswer answer = Eden::AskSystemKeyboard(request, stop);
+                        closer.join();
+                        std::fprintf(stderr, "EDEN_DEV_KEYBOARD outcome=%d length=%zu\n",
+                                     static_cast<int>(answer.outcome), answer.text.size());
+                    }).detach();
                 }
                 // The runner's crash request, to test the crash report in the launcher.
                 Eden::Crash::DevelopmentRequest(Eden::AppFile("crash-app.txt"));

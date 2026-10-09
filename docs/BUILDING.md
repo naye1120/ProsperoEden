@@ -10,9 +10,7 @@ The first run fetches every dependency at its pinned revision, builds the RADV d
 Eden for the PS5, and writes the release files to `dist/`:
 
 - `ProsperoEden-vX.Y.Z.zip`: the `PPSA99008` folder to copy to `/data/homebrew/PPSA99008`;
-- `ProsperoEden-vX.Y.Z.ffpfsc`: the same folder as a compressed PFS image that
-  ShadowMountPlus installs like a package;
-- `SHA256SUMS` and `release-notes.md`.
+- `SHA256SUMS` (the ZIP's checksum) and `release-notes.md`.
 
 The app package includes an exact-title one-shot helper built from the pinned upstream
 [PS5-Lapy-JB-Daemon](https://github.com/blackbearreloaded/PS5-Lapy-JB-Daemon) source. Its generated
@@ -39,7 +37,6 @@ already exists: the dependencies, this checkout's build cache in
 |---|---|
 | `make` / `make release` | Release files in `dist/` |
 | `make package` | Only the app folder, `build/release/PPSA99008` |
-| `make image` | Only the `.ffpfsc` package image |
 | `make install PS5_HOST=<address>` | Copy `build/release/PPSA99008` to a console over FTP (close ProsperoEden first) |
 | `make dev DEV_TITLE=<title ID>` | Development build, `build/dev/PPSA99008` (or `EDEN_DEV_PACKAGE_DIR`): profiling counters, `dev-settings.txt` switches, boots the given title |
 | `make test` | Host (Linux) build of the emulator and its test suites |
@@ -51,6 +48,23 @@ already exists: the dependencies, this checkout's build cache in
 | `make distclean` | Also remove the fetched `.deps` and this checkout's build cache |
 
 `JOBS=<n>` sets the number of parallel compile jobs (default: all cores).
+
+The download sources and the save sync can be checked against real RomM servers and
+ftpsrv, the console's FTP server, in Docker (`ROMM_CHECK=1 tools/check-romm.py`, or `ROMM_CHECK=1 make
+test`; it is not part of a plain `make test`, since it pulls several server images and, while it
+runs, an FTP server without a sign-in listens on the computer's network): for each version (default: the oldest the save sync takes, `kMinimumVersion` in
+`headless/remote/romm/romm_saves.h`, the newest it was checked with, and one older than the oldest,
+which has to be refused) it starts a RomM with fake games (`tools/romm-test/`), scans them,
+downloads them as a download source (a game of 400 MB stopped part way and gone on with, compared
+byte for byte; updates and DLC, a cancel, two sources, the queue kept), plays a second console and
+a phone against its save sync, and takes it down again. It needs Docker with Compose (without it,
+it is skipped); the first run of a version downloads its image (about 1.2 GB on disk, MariaDB's
+0.5 GB once; ftpsrv's is built once). ftpsrv runs on the host's network while the check runs (its
+passive mode needs it). `tools/check-remote.py` has what needs no server, and against stand-ins
+(`tools/romm-mock-server.py`, `tools/ftp-mock-server.py`) only what a real RomM and ftpsrv do not
+show on demand: a server that caps its pages or cannot resume, games told apart by metadata ids
+and title IDs, another file name on a second source, and a full drive. Raise
+`kMinimumVersion` only to a version this check passes with.
 
 ## Dependencies
 
@@ -119,8 +133,17 @@ What the PS5's home screen shows for the app is in `sce_sys/`, as it goes into t
 `make toolchain` checks them: `clang-18`, `lld-18` and the LLVM 18 tools, `cmake`, `ninja`,
 `ccache`, `make`, `nasm`, `meson`, `rsync`, `git`, `glslangValidator`, `spirv-val`, `bison`,
 `flex`, `curl`, `wget`, `unzip`, and Python 3.11 or later with `venv`, `mako` and `yaml`.
-The image step fetches [PSBrew/MkPFS](https://github.com/PSBrew/MkPFS) at a pinned commit into
-`~/.cache/prosperoeden-mkpfs`.
+
+RADV's host tools (`mesa_clc`, `vtn_bindgen2`) are built against the host's LLVM 21: its
+development files, Clang 21 libraries, libclc and the SPIR-V LLVM translator. The Payload SDK's
+`prospero-*` wrappers (the RADV build and the final link) use `$LLVM_CONFIG`, else the newest of
+LLVM 21 to 15 that is installed: the releases are linked with LLD 21. On Ubuntu 26.04 every
+package the release build needs is listed in `tools/ci/ubuntu-packages.txt`, the file the release
+workflow installs from:
+
+```bash
+sudo apt install --no-install-recommends $(grep -v '^#' tools/ci/ubuntu-packages.txt)
+```
 
 ## Crash reports
 
@@ -146,13 +169,49 @@ crashes on request, to try it on a console: write `segv`, `thread`, `abort` or `
 ## Release workflow
 
 `.github/workflows/release.yml` runs `tools/ci/build-release.sh` (`make release`) on a
-self-hosted runner labelled `prosperoeden`. `EDEN_DEV_CHECKOUT` in the runner's `.env` may name a
-development checkout whose dependencies are reused instead of fetched.
+GitHub-hosted runner (`ubuntu-24.04`), inside an `ubuntu:26.04` container with the packages in
+`tools/ci/ubuntu-packages.txt`: the same distribution and LLVM versions as a build on your own
+machine. It first deletes SDKs the runner image carries (.NET, Android, GHC, the tool cache) for
+disk space, and builds with as many jobs as the runner has cores (`JOBS`, and `RADV_BUILD_JOBS`
+for RADV, whose build otherwise runs 24).
 
-- **Manual run** (Actions > Release build > Run workflow): builds the release files and keeps
-  them as a 7-day artifact.
-- **Tag `vX.Y.Z`**: builds them, checks that the tag matches the package version, and publishes
-  a pre-release. The release notes come from the README's "Changes in vX.Y.Z" section.
+Between runs it caches the downloads (`PROSPEROEDEN_DEPS_CACHE`, keyed on `tools/deps.json`),
+ccache, and the built RADV driver with the SDK it is linked with (keyed on its pins and build
+scripts), so a later run compiles mostly what changed and takes about ten minutes. A run without
+these caches builds everything on four cores and takes about an hour. Should a build ever reach
+the build step's limit (315 minutes), ccache is still saved, and running the workflow again
+continues from there. A pull request starts from `main`'s caches and, when it builds, saves no
+ccache of its own.
+
+`tools/ci/build-release.sh` still accepts `EDEN_DEV_CHECKOUT` (a development checkout whose
+dependencies are reused instead of fetched) for a build on your own machine.
+
+- **Pull request** (by itself, at every push to it) and **manual run** (Actions > Release build >
+  Run workflow): builds the release files, checks the ZIP (intact, `eboot.bin` present, every
+  entry stored as 0777) and keeps `dist/` (the ZIP, `SHA256SUMS` and `release-notes.md`) as a
+  7-day artifact. Nothing is published. A push to
+  `main` builds nothing: a build of `main` is a manual run. The artifact is `ProsperoEden`; for
+  a pull request it is `ProsperoEden-PR<number>-<commit>`, with the first seven characters of
+  the pull request's own head commit. A newer push to a pull request, or a newer manual run on
+  the same branch, cancels the run in progress.
+- **Tag `vX.Y.Z`** (by itself, when the tag is pushed): builds and checks them the same way, checks that the tag matches the package
+  version, and publishes a pre-release with the ZIP and `SHA256SUMS` (a second job, outside the
+  container). The release notes come from the README's "Changes in vX.Y.Z" section.
+- Every run also keeps `build/symbols/` as an artifact with `-symbols` after the name: 90 days
+  for a tag, 7 days otherwise.
+- A tag's or a manual run's ZIP is attested (signed build provenance): a release ZIP built by
+  the workflow can be checked with
+  `gh attestation verify ProsperoEden-vX.Y.Z.zip -R blackbearreloaded/ProsperoEden` (GitHub
+  CLI). This covers releases built by GitHub Actions from now on (after v1.000.090), not
+  earlier ones.
+
+A release is made by pushing the tag: the workflow builds, attests and publishes the ZIP and
+`SHA256SUMS`. Do not attach files to a release by hand. With no release for the tag, the workflow
+creates it. A release that already exists without a ZIP (notes written in advance, or a draft)
+gets the workflow's ZIP and `SHA256SUMS`, and keeps its title and notes. A release that already
+has a ZIP keeps its files (the catalog at homebrew.page records each release ZIP's checksum, so
+a published ZIP is never replaced): the run ends successfully with a warning that those files
+were not published by it and may have no attestation.
 
 To cut a release:
 
@@ -162,4 +221,4 @@ To cut a release:
 3. Test the build on a console.
 4. Push a `vX.Y.Z` tag.
 5. Keep `build/symbols/ProsperoEden-vX.Y.Z.elf` from the build that was published (crash reports
-   are read with it).
+   are read with it): download the tag run's `ProsperoEden-symbols` artifact before it expires.

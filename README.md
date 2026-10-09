@@ -10,11 +10,11 @@
 
 **ProsperoEden is an unofficial PlayStation 5 port of [Eden](https://github.com/eden-emulator/mirror)** - an accurate, high-performance emulator. All credit for the emulator core belongs to the Eden project and its contributors. ProsperoEden is not affiliated with or endorsed by the Eden team or Sony.
 
-This is an early alpha. Video, audio, controller input, and saves have been confirmed working. Compatibility and performance will vary between games. The current release is **v1.000.080**.
+This is an early alpha. Video, audio, controller input, and saves have been confirmed working. Compatibility and performance will vary between games. The current release is **v1.000.090**.
 
 ## Source code
 
-The complete ProsperoEden source is in this repository: the PS5 frontend and launcher in `headless/`, and the build and packaging tools in `tools/`. To build it yourself, run `make` on Linux (Ubuntu 26.04; WSL works). It fetches every dependency at its pinned revision and writes the release files to `dist/`; `make help` lists the other targets. See [docs/BUILDING.md](docs/BUILDING.md).
+The complete ProsperoEden source is in this repository: the PS5 frontend and launcher in `headless/`, and the build and packaging tools in `tools/`. To build it yourself, run `make` on Linux (Ubuntu 26.04; WSL works). It fetches every dependency at its pinned revision and writes the release files to `dist/`; `make help` lists the other targets. See [docs/BUILDING.md](docs/BUILDING.md). A release ZIP built by GitHub Actions can be checked with `gh attestation verify <ZIP> -R blackbearreloaded/ProsperoEden` (GitHub CLI); this covers releases built from now on (after v1.000.090), not earlier ones.
 
 ## Project foundation
 
@@ -51,6 +51,8 @@ The complete ProsperoEden source is in this repository: the PS5 frontend and lau
 - **Accessibility** - larger text, high contrast and reduced motion, in **Settings > Accessibility**.
 - **Save data in and out** - import a game's save from a folder or from a Ryujinx data folder, and export a copy (Triangle in the Library, then **Save data**).
 - **Game updates and DLC** - put update and DLC files (NSP or XCI) in the `updates` folder next to `roms`. They apply when the game starts, and each game's details show the update version and DLC count.
+- **Download sources** - the games on servers in your network, such as a [RomM](https://github.com/rommapp/romm) server, appear in the Library next to the ones on the console. A game is downloaded when you play it, or ahead of time through a download queue, and then runs from the console like any other: nothing is streamed. Downloads need an FTP server running on the console; see [Download sources](#download-sources).
+- **Save sync** - each profile can keep its save data on a server, such as a [RomM](https://github.com/rommapp/romm) server, as Steam does: it is synced before a game starts and after it ended, and when it changed on two devices you choose which one stays. A profile is paired with its server by a QR code, no typing. See [Save sync](#save-sync).
 - **Mods** - patches, replacement game files and cheats for a game, from a `mods` folder next to `roms`, each switched on or off in the game's settings (Triangle in the Library, then **Mods**).
 - **Performance switches** - seven switches that trade accuracy for speed (compiling a game's code ahead, asynchronous shaders, faster GPU, CPU and DMA emulation, and more) in **Settings > Performance**; see [Performance settings](#performance-settings).
 - **Shader cache** - shaders compiled in earlier sessions are loaded when a game starts, so an effect stutters only the first time it appears.
@@ -59,6 +61,8 @@ The complete ProsperoEden source is in this repository: the PS5 frontend and lau
 - **Updates from the menu** - when a newer release is listed on [homebrew.page](https://homebrew.page/ps5), ProsperoEden offers to install it each time it opens; **Skip** keeps the current version; see [Updating](#updating).
 - **Crash reports** - if ProsperoEden stops because of an error, it saves a report with that session's logs, starts again and shows where the report is.
 - **Controllers, audio, and saves** - up to four DualSense controllers (one per signed-in PS5 user) with rumble and motion controls, game audio, and save data work out of the box. Games that have a single Joy-Con held sideways are played with the DualSense held as usual: the stick, the buttons and the motion sensors are turned to match.
+- **Controller type per game** - some games take a Pro Controller and then only work with another controller. In **Library > Game settings > Controls**, **Controller type** gives the game a Pro Controller, the Handheld controller, Dual Joy-Cons, a Left Joy-Con or a Right Joy-Con. Left on **Automatic**, the game gets what it takes, a Pro Controller first.
+- **Typing text** - when a game asks for text (a character's name, an answer during an event), the PS5's own on-screen keyboard opens, and what you enter goes to the game. A USB or Bluetooth keyboard the PS5 supports types into it too.
 
 ## Install
 
@@ -98,7 +102,8 @@ Only these subfolders matter; the folder itself can have any name and location.
 │       └── cheat_<name>.txt            # optional: cheats without a mod folder
 ├── save-import/                        # optional: saves to import, one folder per title ID
 ├── ryujinx/                            # optional: a Ryujinx data folder to import saves from
-└── save-export/                        # written by "Export a copy"
+├── save-export/                        # written by "Export a copy"
+└── .remote-downloads/                  # downloads that are not finished yet (see Download sources)
 ```
 
 The folder browser shows how many keys, firmware files, and games each folder holds, so you can check a folder before selecting it. Moving your files later only needs a new selection in Settings; saved settings, covers, and recently played games carry over.
@@ -110,6 +115,14 @@ ProsperoEden keeps its own data in `/data/prosperoeden`, separately from the gam
 ```text
 /data/prosperoeden/
 ├── config/prosperoeden.json            # every profile's settings, and the game files folder
+├── config/remote/                      # download sources and save sync, when you use them:
+│   ├── sources.json                    #   the sources and how to reach them (written by you)
+│   ├── queue.json                      #   the download queue
+│   ├── <source>/catalog.json           #   each source's game list, kept for the next start
+│   ├── save-sync.json                  #   where each profile syncs its save data (filled in by you)
+│   └── save-sync/                      #   what the save sync keeps: the console as a device of
+│                                       #   each profile's server, the games still to be synced
+├── backup/save-sync/                   # save data the save sync replaced, the last three per game
 ├── covers/                             # cached game covers
 ├── logs/                               # current and previous session logs, crash reports
 └── user/                               # every profile's saves, and emulator user data
@@ -132,7 +145,6 @@ Once each time it opens, ProsperoEden asks [homebrew.page](https://homebrew.page
 If the download or the unpacking fails, the dialog says why and offers **Try again**; the app stays as it was. Without a network, or without an answer, nothing is shown. When ProsperoEden cannot install the release itself (no payload loader, or an install it cannot find), the menu says **Update available** at the top right for ten seconds instead, and the steps below still work:
 
 - **Folder install.** Copy the `PPSA99008` folder from the new release ZIP over `/data/homebrew/PPSA99008`, replacing the files it has, then start ProsperoEden. Files you put there yourself, such as `language.txt`, stay.
-- **Package image (`.ffpfsc`).** Delete the old image, copy the new one to the same place, then restart ShadowMountPlus (send its payload again, or restart the console) and start ProsperoEden. ShadowMountPlus 1.6 keeps the old image mounted until it restarts; 1.7 finds a replaced image by itself at its next scan, and a restart does no harm there. Keep one image only, and no `PPSA99008` folder next to it: two copies of the app are reported as a duplicate. The image install is still untested (see the [Roadmap](#roadmap)), so these steps follow how ShadowMountPlus handles images.
 
 ### Moving save data
 
@@ -149,7 +161,7 @@ Cross imports, and asks before it replaces a save. The save it replaces is first
 A mod changes a game: a patch to its code (`.pchtxt` or `.ips` files in an `exefs` folder), replacement game files (a `romfs` folder), or cheats (a `cheats` folder). Mods made for other emulators of the same console come in this layout.
 
 - **Add a mod.** Each mod is a folder. Copy it to `mods/<title ID>/`, next to `roms/` in the game files folder, so that a patch ends up at `mods/<title ID>/<mod name>/exefs/<file>.pchtxt`. The title ID is the 16-character code in the game's file name. The Mods screen names the exact folder, and Square creates it. The About screen shows where the `mods` folder is.
-- **Add cheats.** Cheats are text files in the layout cheat collections for other emulators of the same console use: each cheat starts with its name in square brackets (`[Infinite health]`), followed by its code lines. Put the file at `mods/<title ID>/<mod name>/cheats/<build ID>.txt`, the same place as a mod (any mod folder name; a collection's own folder works as it is). A single cheats file can also go straight into the title's folder as `mods/<title ID>/cheat_<name>.txt`; it is listed as its own mod. The build ID is the code the file is named after in cheat collections: each version of a game has its own, so pick the file for the version you run (with its update in `updates/`). Folder names may be in any letter case.
+- **Add cheats.** Cheats are text files in the layout that cheat collections for other emulators of the same console use: each cheat starts with its name in square brackets (`[Infinite health]`), followed by its code lines. Put the file at `mods/<title ID>/<mod name>/cheats/<build ID>.txt`, the same place as a mod (any mod folder name; a collection's own folder works as it is). A single cheats file can also go straight into the title's folder as `mods/<title ID>/cheat_<name>.txt`; it is listed as its own mod. The build ID is the code the file is named after in cheat collections: each version of a game has its own, so pick the file for the version you run (with its update in `updates/`). Folder names may be in any letter case.
 - **Switch it on or off.** In the Library, press Triangle on the game and pick **Mods**. Every mod found is listed with a switch. A mod is on unless you switch it off, and a change applies the next time the game starts.
 - **Switch all of a game's mods off or on.** In the Library, a game that has mods shows a **Mods** switch under its console mode; Square flips it. Off, the game starts without any of its mods, and each mod keeps its own switch for when you turn it back on.
 - **Choose cheats one by one.** A cheats file can hold many cheats, as the collections made for a game do. When a mod lists more than one, the Mods screen shows each cheat under the mod with its own switch, and none of them runs until you switch it on. Cheats that replace each other, such as two frame rates or two resolutions, take each other's place: switching one on switches the other off. A mod with a single cheat runs it whenever the mod is on.
@@ -158,6 +170,76 @@ A mod changes a game: a patch to its code (`.pchtxt` or `.ips` files in an `exef
 - **Frame rate.** A patch that makes a 30 FPS game run at 60 FPS works on the 60 Hz output ProsperoEden uses. A patch for more than 60 FPS needs the 120 Hz output: set **Refresh rate** to 120 Hz in the game's settings (Triangle in the Library) or in **Settings > Video**. That takes a display that shows 120 Hz and the PS5's own 120 Hz output setting; without them the game runs at 60 Hz. A 60 FPS patch can gain from it too: a game that misses some frames at 60 Hz has twice as many chances to show them. A patch for more frames than the output shows (240 FPS on the 120 Hz output, 120 FPS on the 60 Hz one) still runs at its own pace: the frames the display has no refresh for are left out.
 
 ProsperoEden does not include or download mods.
+
+### Quick start with RomM
+
+Download sources and save sync both work with a [RomM](https://github.com/rommapp/romm) server in your network (5.0.0 or newer for the save sync). In short:
+
+1. **Put the games on the server.** Games go to RomM's library under `roms/switch/`: a game as one `.nsp` or `.xci` file, or as a folder with the game's file, its updates in `update/` and its DLC in `dlc/`. Then start a scan in RomM (its **Scan** page) so it lists them.
+2. **One RomM user per person.** Each person who plays on the console gets a user of their own in RomM; their save data stays apart on the server.
+3. **Downloads.** In RomM, create a client API token (your profile, **Client API tokens**) with the scopes `platforms.read` and `roms.read`. Write `/data/prosperoeden/config/remote/sources.json` over FTP with the server's address and that token (see [Download sources](#download-sources)), start an FTP server on the console on port 2121 (ftpsrv), and open **Settings > Downloads**: the server and its games show up, and the Library lists them.
+4. **Save sync.** Open **Settings > Save sync**, Cross on a profile and choose the server. Scan the QR code with your phone, sign in to RomM as that profile's user and approve the code. From then on the profile's save data is synced before and after each game (see [Save sync](#save-sync)). Pairing uses the server from `sources.json`; without download sources, fill in `save-sync.json` over FTP instead. The save sync does not need the FTP server.
+
+### Download sources
+
+A download source is a server in your network that has games, such as a [RomM](https://github.com/rommapp/romm) server. Its games show up in the Library without taking any space on the console. A game is downloaded to the game files folder when you want it; from then on it is a game on the console like one you copied there. Nothing is streamed. **Downloads need an FTP server running on the console** (port 2121, see below): it writes the downloaded files.
+
+- **Set them up.** Make sure an FTP server runs on the console, then save `/data/prosperoeden/config/remote/sources.json` on the console (over FTP, like the keys) and open **Settings > Downloads**, or reopen ProsperoEden. It lists the sources, each with its `"type"`, a `"name"` for the menu and what that type needs (see [RomM](#romm) for a RomM server):
+
+  ```json
+  { "sources": [
+      { "type": "romm", "name": "Home", "url": "http://192.168.1.20:3000", "token": "rmm_..." },
+      { "type": "romm", "name": "Office", "url": "https://games.example.org", "token": "rmm_..." }
+  ] }
+  ```
+
+  **Settings > Downloads** shows each source, whether it answered, and why not when it did not, and the FTP server's port. Without a source it shows what the file is called, with an example for a RomM server. When you ask it to read the lists again (Cross on a source), it says when they are in.
+- **The Library.** The sources' games are listed with the console's own, by name, with their cover. A game that is not on the console has a darker cover with a cloud, and instead of NSP or XCI its row names its source (or how many have it), or says **Queued**, how far its download is, or **Download failed**. Its details name its sources. The same game on several sources is listed once, and a game that is on the console already is not listed again. Its settings, mods and console mode are there once it is downloaded.
+- **Which game is which.** Each source says what it knows of a game: its title ID, its ids at metadata providers (IGDB, ScreenScraper and the like) and whether its name comes from such metadata. Two sources' games are the same game when the first of these that both know agrees: the title ID, then an id at a provider both have one of, then the name (when both names come from metadata; case, accents and punctuation do not count), else the file name. A game on the console is the source's game when it has the file name the source gives it (a downloaded one does), else when their title IDs agree (when the source knows one), else by its name.
+- **Play.** Cross on a game that is not on the console downloads it first. A ring shows how far it is and the time left, and the game starts once all of it is there. Circle lets it download in the background without starting it; Square cancels it. When several sources have the game, ProsperoEden asks which one first.
+- **Download ahead.** Square on such a game puts it in the download queue, and Square again takes it out. The queue downloads one game at a time while the menu is open, also after ProsperoEden was closed and opened again. **Settings > Downloads** lists it: Square cancels a download, Cross tries a failed one again, and Cross on a source reads the sources' game lists again (also done by itself when the menu opens after more than 15 minutes).
+- **Where the files go.** The game's file goes to `roms/`, under its name on the source; its updates and DLC go to `updates/`. What a source counts as the game, an update or DLC is up to it (a RomM server: its file categories). A game downloaded from a source keeps the file name it has there. Only `.nsp` and `.xci` files are downloaded, and an entry without a game file (an update or DLC on its own) is not listed.
+- **An FTP server on the console.** Downloads are written by an FTP server running on the console (such as [ftpsrv](https://github.com/ps5-payload-dev/ftpsrv), which most setups have for copying the keys), on port 2121: ProsperoEden hands it the bytes over loopback. Written by the app itself, a game of several gigabytes slowed the drive down to a few MB/s and stopped the menu; from a payload the drive keeps its speed. Without such a server a download fails and says so. `"ftp_port"` next to `"sources"` names another port (etaHEN's own FTP server, for example), and `"ftp_user"` and `"ftp_password"` a sign-in when the server asks for one (else `anonymous`). The server must support `REST` with `STOR`, to go on with a download.
+- **Interrupted downloads.** A download is written to `.remote-downloads/` in the game files folder, and once all of the game's files are complete they are moved to `roms/` and `updates/`, so those folders only ever hold whole files of whole games. It stops while a game runs and when ProsperoEden closes, and goes on from where it was the next time the menu is open; the last 4 MB are downloaded again then, in case the console lost power while they were written. A cancel deletes what was downloaded (and never touches `roms/` or `updates/`), and what `.remote-downloads/` holds for a game that is not in the queue is deleted when the menu opens, so nothing is left behind. When the drive is full, the download stops and says so, as the FTP server reports it ("No space left on device"); nothing reaches `roms/` or `updates/`, what was downloaded stays in `.remote-downloads/`, and once there is room, Cross on it in **Settings > Downloads** goes on from there (Square cancels it and deletes it). The drive's free space is not checked before a download starts: an app on the console cannot ask for it.
+- **Checked as it comes.** RomM does not hash these files, so a download is checked on its way in, as Eden's integrity check checks a game: each NCA of an NSP or XCI against the SHA-256 it is named after, with no keys needed. A file found damaged is deleted and the download fails saying so; trying again downloads it again. A download that goes on reads what it had from the drive first (**Checking** in the queue). What the console's FTP server writes is not read back, and files that are no NSP or XCI are taken as they are.
+- **Making room.** A game that a source has can be deleted from the console again: Triangle in the Library, then **Delete from console** (Cross twice). Its file and all of its updates and DLC in `updates/` are deleted, also ones put there by hand; its save data, its settings and its mods stay. The Library then lists it as on its sources again, and it can be downloaded any time.
+
+Sign-ins are kept in `sources.json` only, and each is sent to its own source only. They are stored there as plain text, and whoever can reach the console's FTP server can read the file: give a source a token made for it, with only the scopes it needs, rather than your password. A file that is on the console already is never replaced by a download of the same name. Download sources need filesystem access (the payload loader on port 9021), as the game files folder does, and an FTP server on the console (see above). Save data is synced apart from the sources; see [Save sync](#save-sync).
+
+#### RomM
+
+`"type": "romm"` is a [RomM](https://github.com/rommapp/romm) server (a current version); as with any source, its games are written by the console's FTP server, which has to run. Its entry in `sources.json` has the server's `"url"` and a `"token"`: in RomM, create a client API token (your profile, **Client API tokens**) with the scopes `platforms.read` and `roms.read`. `"username"` and `"password"` work instead of `"token"`, and `"platform"` names the platform's slug when the server does not call it `switch`. RomM's file categories decide what is the game and what are its updates and DLC; manuals, mods, soundtracks and the like stay on the server. In RomM a game is a folder, with its updates in `update/` and its DLC in `dlc/`. What RomM matched a game to tells it apart: its ids at the metadata providers RomM uses, its name when RomM identified it, and its title ID when the RomM server has the keys to read it.
+
+### Save sync
+
+Each profile can keep its save data on a server, such as a [RomM](https://github.com/rommapp/romm) server (5.0.0 or newer), the way Steam keeps it in the cloud: before a game starts, its save data is put in step with the server's, and after the game ended the new save data goes to the server. Played on another device in between (Eden on Android with [Argosy](https://github.com/rommapp/argosy-launcher), or another console), the newer save data comes to the console; changed on both sides, ProsperoEden asks which one stays. Save sync is set up for each profile and does not depend on the download sources: games copied to the console by hand sync too, as long as the server has the game.
+
+- **Pair a profile, without typing.** **Settings > Save sync** lists the profiles and the server each one keeps its save data on. Cross on a profile pairs it with one of the download sources' servers (asked first when several can): the dialog shows a QR code and a short code. Scan it with your phone (or open the address under it), sign in to the server as the user this profile's save data belongs to, check that the code is the same and approve. The console gets a sign-in of its own for that user and writes it into the profile's entry; the code lasts ten minutes. Square, pressed twice, unlinks a profile: its save data stays on the console and on the server. Each profile can be paired with a user of its own, so two people's save data stay apart. Pairing needs the server among the download sources (`sources.json`); without one, set it up over FTP as below.
+- **Or set it up over FTP.** ProsperoEden writes `/data/prosperoeden/config/remote/save-sync.json` with an entry for every profile, and keeps it in step with the profiles: a new profile gets an empty entry, a removed one's entry goes, and a renamed one's `"__profile_name"` changes. Fill in the entry of each profile that should sync (over FTP, like the keys), with the server's `"type"`, `"url"` and sign-in (see [RomM](#romm-1) for a RomM server):
+
+  ```json
+  { "version": 1, "auto": true,
+    "profiles": [
+      { "profile": "1F1E1D1C1B1A19181716151413121110", "__profile_name": "Player 1",
+        "type": "romm", "url": "http://192.168.1.20:3000", "token": "rmm_..." },
+      { "profile": "AFAEADACABAAA9A8A7A6A5A4A3A2A1A0", "__profile_name": "Kids",
+        "type": "romm", "url": "http://192.168.1.20:3000", "token": "rmm_..." },
+      { "profile": "000102030405060708090A0B0C0D0E0F", "__profile_name": "Guest",
+        "type": "", "url": "", "token": "" }
+    ] }
+  ```
+
+  A paired entry has its `"token"` and a `"__server_user"` (who it signed in as, for the menu). `"profile"` is the profile's ID, which tells the entries apart (a name can change, the ID does not); leave it as it is. Fields that start with `__` are only there to read: ProsperoEden writes them, and what you write into them changes nothing. An entry with an empty `"type"` does not sync. `"auto": false` turns the save sync off for every profile, also for the games still waiting to be synced after they were played. Everything else you write stays as it is, also fields of your own. A file that is not valid JSON is left alone, and no profile syncs until it is fixed (the log says so).
+- **One server user for each person.** Give each profile the sign-in of its own user on the server (in RomM: a client API token of that user): the server keeps each user's save data apart, so two people's save data of the same game stay two. Two profiles with the same user would share their save data.
+- **Before a game.** Starting a game opens a dialog while its save data is synced; the game starts when it is done. When the server's save data is newer, it replaces the console's. Circle goes back without the game (the sync stops, nothing more changes). When the server cannot be reached, the dialog says why: **Play anyway** (with the console's save data; it is synced after the game), **Try again** or **Back**.
+- **After a game.** Once the menu is back, the game's save data goes to the server, and a notice at the top right says so. When that fails (no network), it is tried again each time the menu opens, until it worked.
+- **Changed on both sides.** When the console and the server both have save data the other does not know (played on two devices without a sync between), a dialog asks which one stays: **Keep this console's** (it goes to the server), **Take the server's** (it replaces the console's) or **Change nothing** (you are asked again next time). It shows when each was saved, and on which device the server's was.
+- **Nothing is lost.** Save data replaced on the console is first moved to `/data/prosperoeden/backup/save-sync/<profile>/<title ID>/<time>/`; the last three of each game are kept. A RomM server keeps the last ten versions of each game's save data as well. To go back to one, copy that folder's contents over the game's save data while ProsperoEden is closed. If ProsperoEden is closed in the middle of a replacement, the console's save data is put back the next time the game syncs.
+- **What is synced.** A game's save data of the profile: its folder `user/nand/user/save/0000000000000000/<profile ID>/<title ID>/`, as one zip with that folder at its top, the way Argosy packs Eden's save data (so it goes between the two). Save data a game keeps for the whole console (not for a user) is not synced. The server must have the game: it is found as a download source's game is found on the console (by its file name, its title ID, or its name).
+
+#### RomM
+
+`"type": "romm"` keeps the save data on a [RomM](https://github.com/rommapp/romm) server with save sync, RomM 5.0.0 or newer (checked with 5.0.0 to 5.3.1). With an older server nothing is synced, and every sync says so in a dialog to confirm, with the server's version and the one it needs. Paired from Settings > Save sync, RomM's device authorization does the signing in: the code is approved on the server's page `/pair/device`, and RomM makes a device of the console with a client API token bound to it. Set up over FTP instead, its entry in `save-sync.json` has the server's `"url"` and a `"token"` of the profile's own RomM user: in RomM, create a client API token (your profile, **Client API tokens**) with the scopes `platforms.read`, `roms.read`, `assets.read`, `assets.write`, `devices.read` and `devices.write` (and `me.read`, for the log to name the user); a scope that is missing is named when a sync fails. `"username"` and `"password"` work instead of `"token"`, and `"platform"` names the platform's slug when the server does not call it `switch`. The console is registered once as a device of that user, **ProsperoEden (PS5)**, and RomM knows from it which version of each game's save data the console last had. A game's save data is in its slot `autosave`, for the emulator `eden`, as Argosy keeps Eden's; the game's other slots and other emulators' save data are left alone. Which side changed is told by the save data itself, not by the times RomM compares: the console keeps what it last had in step (`config/remote/save-sync/<profile>/synced.json`). Save data deleted in RomM is uploaded again by the console that still has it.
 
 ### Performance settings
 
@@ -196,6 +278,8 @@ Resolution, the upscaling filter, the renderer and the refresh rate, which chang
 - **Left and right** change a profile's name: the names of the PS5 users signed in, then "Player 1" to "Player 8".
 - **Square**, pressed twice, takes a profile off the list. Its save data stays on the console.
 
+Each profile can keep its save data on a server of its own; see [Save sync](#save-sync).
+
 The menu opens with the profile that the PS5 user in front chose last. If you used an earlier version, your saves, settings and recently played games are the first profile's, where they always were.
 
 ### Settings per game
@@ -229,6 +313,17 @@ The launcher follows the language the PS5 is set to: Arabic, Chinese (simplified
 ### Upgrading from an earlier alpha
 
 Earlier versions read everything from `/data/homebrew/PPSA99008/assets/`. That folder keeps working until you choose a game files folder, and settings are migrated automatically on first launch. To move to the new layout, move `assets/keys`, `assets/firmware` and `assets/roms` into any folder, then select it in **Settings > Game files**. The release ZIP contains no user files, so copy its app files over your installation without deleting your own data.
+
+## Changes in v1.000.090
+
+- **Download sources (new, early).** Games on a [RomM](https://github.com/rommapp/romm) server in your network appear in the Library and are downloaded to the console when you want to play them; see [Download sources](#download-sources). Contributed by [matschi95](https://github.com/matschi95).
+- **Save sync (new, early).** Each profile can keep its save data in step with a RomM server, synced before a game starts and after it ends, and paired by scanning a QR code; see [Save sync](#save-sync). Replaced save data is kept as a backup first. Contributed by [matschi95](https://github.com/matschi95).
+- **Controller type per game.** **Library > Game settings > Controls > Controller type** gives a game a Pro Controller, the Handheld controller, Dual Joy-Cons, a Left Joy-Con or a Right Joy-Con, for games that take a Pro Controller and then only work with another.
+- **Typing text.** When a game asks for text, the PS5's own on-screen keyboard opens, and what you enter goes to the game.
+- **Firmware 7.40 and 7.61: games no longer end at their first picture.** Contributed by [v0ltfault](https://github.com/v0ltfault).
+- **Game names without question marks.** A name with a look-alike character (a sequel's Roman numeral, full-width letters) is shown with plain letters, a name that is not text is skipped, and characters no font has are left out.
+- **System language in the start-up trace**, with the menu's language and the console fonts found, for reports from other consoles.
+- **Builds on GitHub.** Releases are now built by GitHub Actions from the tagged source.
 
 ## Changes in v1.000.080
 
@@ -334,14 +429,16 @@ The touchpad is pressed as a button. On its own, a tap of the touchpad presses t
 
 ## Roadmap
 
-- **FPKG support** - install ProsperoEden as a fake package, alongside the current homebrew folder install. Each release includes a ShadowMountPlus package image (`.ffpfsc`); installing it still needs testing.
+- **FPKG support** - install ProsperoEden as a fake package, alongside the current homebrew folder install.
 - **More performance** - CPU and GPU work to keep demanding games at their target frame rate: the short stutter when a game reaches new areas (the block list, **Compile ahead** in **Settings > Performance**, once it has run in more games and can be on by default), heavy cutscenes, and games that run slower in Docked mode than in Handheld.
+- **Frame generation (investigation)** - show a picture made up between two of the game's own, so that a game running at 30 FPS looks like 60, or 60 like 120 on a display that takes it. Emulators mostly leave this to tools outside them (a frame-generation program over the window, or the graphics driver's own); neither exists on the PS5, so it would be ours: the motion between two finished pictures estimated on the GPU, as driver-level frame generation on PCs does, without motion data from the game. To find out: what it costs in GPU time, how much later the controls feel (the newest picture has to wait for the one made before it), and how menus and text hold up. It makes motion smoother; it does not make a game run faster.
 - **More reliable game loading** - a game that hangs while it loads can now be left with Touchpad + L1; the hangs themselves still need a log from a game that does it.
-- **Controller type per game** - some games only work with a Handheld controller or Joy-Cons, not the Pro Controller every player gets today. Add a **Controller type** choice to each game's Controls: Pro Controller (the default), Handheld, Dual Joy-Cons, Left Joy-Con or Right Joy-Con.
+- **Game names in the menu's language** - a game carries a name for each language; the Library shows the first one that is text. Show the one in the menu's language, and the name from an installed update when it has one.
 - **Real Joy-Cons and Pro Controllers (investigation)** - play with the original controllers connected to the PS5. The PS5 does not pair them itself, so this first needs to find out whether a homebrew app can read them: a wired Pro Controller over USB looks more likely than Joy-Cons, which only connect over Bluetooth.
-- **Typing text in games** - when a game asks for text (a character's name, an answer during an event), show a keyboard instead of answering with the game's default text as now: the PS5's own on-screen keyboard if a homebrew app can open it (it also takes a USB or Bluetooth keyboard the PS5 supports), otherwise one of our own. A USB keyboard's keys could also be mapped to the game's buttons, like the DualSense's.
+- **Keyboard as a controller** - map a USB keyboard's keys to the game's buttons, like the DualSense's. Text entry itself is done: it uses the PS5's on-screen keyboard.
 - **Multiplayer with Eden on other systems (investigation)** - join Eden's multiplayer rooms from the PS5 and play with Eden players on PC, Linux and Android, entering a room's address by hand, including a room hosted on your local network (no PSN needed). Rooms only accept the same Eden version on every side, so each release would name the matching PC version.
 - **DualShock 4 controllers** - use DualShock 4 controllers as players too, next to the DualSense, so multiplayer games do not need four DualSense controllers.
+- **Controller type for each player** - choose, for each of the four connected controllers, which controller the game sees: a Pro Controller, a pair of Joy-Cons, a single left or right Joy-Con, a GameCube controller, or Handheld mode, as Eden does on other systems.
 - **Better OpenGL performance** - make the OpenGL renderer faster, and add tuning options for it.
 - **More game compatibility** - validate more games on the PS5, and fix what keeps them from running well, such as games that crash at launch.
 
