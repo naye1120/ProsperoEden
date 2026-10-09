@@ -18,9 +18,13 @@ OUT = ROOT / 'build/headless-native'
 BASE_REQUIRED = {'eboot.bin', 'core-homebrew.nro', 'sce_module/libc.prx',
             'sce_sys/param.json', 'sce_sys/icon0.png', 'sce_sys/pic0.dds', 'sce_sys/pic1.dds',
             'sce_sys/snd0.at9', 'lapy.elf', 'lapy-manifest.json', 'licenses/Lapy-MIT.txt',
-            'self-updater.elf'}
+            'licenses/NotoSansSC-OFL.txt', 'self-updater.elf'}
 REQUIRED = set(BASE_REQUIRED)
 REQUIRED.update(p.relative_to(APP).as_posix() for p in (APP / 'ui').rglob('*') if p.is_file())
+# force-language.txt ships only when present at the repo root (an optional
+# manual-testing marker; the launcher itself no longer reads it).
+if (APP / 'force-language.txt').is_file():
+    REQUIRED.add('force-language.txt')
 RECEIPT = ROOT / 'HEADLESS_CANDIDATE.json'
 # The pinned OpenGL SDK release (tools/deps.json): digest of its manifest.sha256.
 GL_SDK_MANIFEST_SHA256 = 'f4b91f672be037fbac3f82494f1225deaf4c227a03f37ac3ffa56abb213b943f'

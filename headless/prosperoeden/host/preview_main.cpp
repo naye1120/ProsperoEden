@@ -723,19 +723,18 @@ int main(int argc, char **argv)
         std::fprintf(stderr, "cannot load the font: %s\n", font.error().c_str());
         return 1;
     }
-    // The console's fonts for the scripts the baked one lacks (PE_SYSTEM_FONTS: copies of them).
+    // The console's fonts for the scripts the baked one lacks (PE_SYSTEM_FONTS: copies of them),
+    // with the launcher's own copy of a Chinese font (ui/fonts) as the fallback.
     {
         const char *language = std::getenv("PE_LANG");
         const std::string tag = language != nullptr && language[0] != 0 ? language : "en-US";
-        for (const std::string &folder : pe::gfx::system_font_folders())
-        {
-            std::vector<std::string> files = pe::gfx::system_font_files(folder, tag);
-            if (files.empty())
-                continue;
-            std::fprintf(stderr, "system fonts: %zu files in %s\n", files.size(), folder.c_str());
+        std::vector<std::string> folders = pe::gfx::system_font_folders();
+        folders.push_back(assets + "/fonts");
+        std::vector<std::string> files = pe::gfx::system_font_files(folders, tag);
+        for (const std::string &file : files)
+            std::fprintf(stderr, "system font: %s\n", file.c_str());
+        if (!files.empty())
             font.use_system_fonts(std::move(files), tag);
-            break;
-        }
         if (!pe::catalog().every([&font](std::string_view text) { return font.can_draw(text); }))
         {
             std::fprintf(stderr, "error: the catalog has characters no font here has; on the console the "

@@ -16,8 +16,9 @@ namespace pe::gfx
 
 // The launcher's own font (Montserrat, baked into an atlas) covers Latin and Cyrillic. Japanese,
 // Korean, Chinese, Greek, Thai and Arabic come from the font files the PS5 system software
-// carries (/preinst/common/font): nothing is shipped with the app. A file is read the first time
-// one of its characters is needed.
+// carries (/preinst/common/font); Chinese also has the launcher's own copy of Noto Sans SC (OFL,
+// in ui/fonts), which fills in when the console's folder cannot be read or has no Chinese font
+// for the firmware at hand. A file is read the first time one of its characters is needed.
 //
 // Shaping (which glyph a character becomes next to its neighbours, and where marks sit) is
 // HarfBuzz's; the outlines are turned into distance fields like those of the baked atlas.
@@ -26,8 +27,10 @@ namespace pe::gfx
 std::vector<std::string> system_font_folders();
 // The font files to try, in order, for text shown in `language` (a PS5 language tag such as
 // "ja-JP", "zh-Hans", "ar"): that language's own font first, so that characters shared between
-// Japanese, Chinese and Korean get its forms.
-std::vector<std::string> system_font_files(std::string_view folder, std::string_view language);
+// Japanese, Chinese and Korean get its forms. Each kind of script takes the first folder of
+// `folders` that carries one of its fonts, so a later folder (the launcher's own ui/fonts) only
+// fills in the kinds an earlier one lacks.
+std::vector<std::string> system_font_files(const std::vector<std::string> &folders, std::string_view language);
 
 // One glyph of a shaped run: positions in em, x to the right and y up from the baseline.
 struct RunGlyph

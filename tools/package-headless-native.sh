@@ -46,6 +46,7 @@ cp "$root/build/lapy-owned-helper/lapy.elf" "$app/lapy.elf"
 cp "$root/build/lapy-owned-helper/lapy-manifest.json" "$app/lapy-manifest.json"
 mkdir -p "$app/licenses"
 cp "$root/build/lapy-owned-helper/LICENSE.Lapy" "$app/licenses/Lapy-MIT.txt"
+cp "$root/headless/prosperoeden/ui/fonts/OFL.txt" "$app/licenses/NotoSansSC-OFL.txt"
 # What the console's home screen shows for the title is in sce_sys/, as it goes into the package
 # (the source pictures beside it stay in the repository).
 # The self-update helper (headless/self_update_helper, the boilerplate's) is an ordinary payload:
@@ -56,6 +57,9 @@ make -s -C "$root/headless/self_update_helper" PS5_PAYLOAD_SDK="$template/.deps/
 python3 "$root/tools/validate-loader-elf.py" "$root/build/self-update/self-updater.elf"
 cp "$root/build/self-update/self-updater.elf" "$app/self-updater.elf"
 cp "$root/sce_sys/"{param.json,icon0.png,pic0.dds,pic1.dds,snd0.at9} "$app/sce_sys/"
+# language.txt / force-language.txt in the app folder choose the launcher's catalog;
+# force-language.txt keeps it even when no system font can draw it.
+[[ -f $root/force-language.txt ]] && cp "$root/force-language.txt" "$app/force-language.txt"
 rm -rf "$app/ui"
 cp -a "$root/headless/prosperoeden/ui" "$app/ui"
 # The exact-title upstream Lapy helper is verified before it reaches this package.

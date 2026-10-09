@@ -78,8 +78,10 @@ float MenuGain(int volume) {
 //
 // Montserrat has Latin and Cyrillic letters. The other scripts (Japanese, Korean, Chinese, Greek,
 // Thai, Arabic: in the launcher's own text, a game's title or a file name) are drawn with the
-// console's own fonts, which the font is told of here every time the launcher opens. A catalog
-// those fonts cannot draw in full is not used: English is better than missing letters.
+// console's own fonts, which the font is told of here every time the launcher opens; the
+// launcher's own copy of a Chinese font (ui/fonts, pe/gfx/system_fonts.hpp) fills in
+// when the console's folder cannot be read or has no Chinese font. A catalog those fonts cannot
+// draw in full is not used: English is better than missing letters.
 void LoadLanguage(pe::gfx::Font& font) {
     static bool loaded = false;
     static std::string tag;
@@ -95,16 +97,14 @@ void LoadLanguage(pe::gfx::Font& font) {
             if (!chosen.empty()) tag = chosen;
         }
     }
-    std::string folder = "none";
-    std::size_t files = 0;
-    for (const std::string& candidate : pe::gfx::system_font_folders()) {
-        std::vector<std::string> found = pe::gfx::system_font_files(candidate, tag);
-        if (found.empty()) continue;
-        folder = candidate;
-        files = found.size();
-        font.use_system_fonts(std::move(found), tag);
-        break;
-    }
+    std::vector<std::string> folders = pe::gfx::system_font_folders();
+    folders.push_back(Eden::AppFile("ui/fonts"));
+    const std::size_t files = [&] {
+        std::vector<std::string> found = pe::gfx::system_font_files(folders, tag);
+        const std::size_t count = found.size();
+        if (count) font.use_system_fonts(std::move(found), tag);
+        return count;
+    }();
     if (!first) return;
     std::string catalog = "none";
     std::size_t texts = 0;
@@ -120,9 +120,11 @@ void LoadLanguage(pe::gfx::Font& font) {
         catalog += " (not used: no font for it)";
         texts = 0;
     }
+    std::string folders_text;
+    for (const std::string& folder : folders) folders_text += (folders_text.empty() ? "" : "+") + folder;
     std::fprintf(stderr, "EDEN_LANGUAGE system=%d rc=0x%x tag=%s catalog=%s texts=%zu\n", system_language,
                  static_cast<unsigned>(rc), tag.c_str(), catalog.c_str(), texts);
-    std::fprintf(stderr, "EDEN_FONTS folder=%s files=%zu read=%s\n", folder.c_str(), files,
+    std::fprintf(stderr, "EDEN_FONTS folders=%s files=%zu read=%s\n", folders_text.c_str(), files,
                  font.system_fonts_read().c_str());
 }
 

@@ -58,7 +58,7 @@ struct Group
 constexpr Group kLatin{Script::other, {"SST-Medium.otf", "SST-Roman.otf", nullptr}};
 constexpr Group kJapanese{Script::japanese, {"SSTJpPro-Regular.otf", "SIE-RDC-Pr5N-M-JPN.otf", "SCE-RDC-R-JPN.otf"}};
 constexpr Group kKorean{Script::korean, {"YoonGothicProSIE760.otf", "SCEPS4Yoongd-Medium.otf", nullptr}};
-constexpr Group kChinese{Script::chinese, {"DFHEI5-SONY.ttf", nullptr, nullptr}};
+constexpr Group kChinese{Script::chinese, {"DFHEI5-SONY.ttf", "NotoSansSC-Regular.ttf", nullptr}};
 constexpr Group kThai{Script::thai, {"SSTThai-Medium.otf", "SSTThai-Roman.otf", nullptr}};
 constexpr Group kArabic{Script::arabic, {"SSTArabic-Medium.otf", "SSTArabic-Roman.otf", nullptr}};
 
@@ -177,7 +177,7 @@ std::vector<std::string> system_font_folders()
     return folders;
 }
 
-std::vector<std::string> system_font_files(std::string_view folder, std::string_view language)
+std::vector<std::string> system_font_files(const std::vector<std::string> &folders, std::string_view language)
 {
     const std::string_view prefix = language.substr(0, 2);
     std::vector<const Group *> order;
@@ -195,19 +195,24 @@ std::vector<std::string> system_font_files(std::string_view folder, std::string_
         order = {&kLatin, &kJapanese, &kChinese, &kKorean, &kThai, &kArabic};
     std::vector<std::string> files;
     for (const Group *group : order)
-    {
-        for (const char *name : group->files)
+        for (const std::string &folder : folders)
         {
-            if (name == nullptr)
-                break;
-            const std::string path = std::string(folder) + "/" + name;
-            if (exists(path))
+            bool found = false;
+            for (const char *name : group->files)
             {
-                files.push_back(path);
-                break;
+                if (name == nullptr)
+                    break;
+                const std::string path = folder + "/" + name;
+                if (exists(path))
+                {
+                    files.push_back(path);
+                    found = true;
+                    break;
+                }
             }
+            if (found)
+                break;
         }
-    }
     return files;
 }
 
