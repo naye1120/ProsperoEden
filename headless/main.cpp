@@ -14,6 +14,8 @@
 #include "boot_trace.h"
 #ifdef PS5_NATIVE
 #include "elevation/elevation.hpp"
+#include <cerrno>
+#include <cstring>
 #include <sys/stat.h>
 #endif
 #ifdef EDEN_DEV_VULKAN
@@ -33,8 +35,10 @@
 #include <nlohmann/json.hpp>
 #include "devices.h"
 #include "diagnostics.h"
+#include "hud.h"
 #include "display_refresh.h"
-#include "log_pipe.h"
+#include "log_flusher.h"
+#include "multiplayer_logging.h"
 #include "mods.h"
 #include "controller_applet.h"
 #include "error_applet.h"
@@ -102,6 +106,9 @@ extern "C" std::int64_t sceKernelGetDirectMemorySize();
 extern "C" bool eden_jit_shared;  // headless/dynarmic/jit_group_support.inc
 #endif
 #include "video_core/gpu.h"
+#ifdef EDEN_PS5_FRAMEGEN
+#include "video_core/frame_gen/lossless_dll.h"
+#endif
 #include "profiles.h"
 #include "stop_limit.h"
 namespace Common {
@@ -153,6 +160,43 @@ static void MigrateSandboxData() {
 }
 #endif
 
+#ifdef PS5_NATIVE
+// Game files an early version kept inside the app's folder (assets/ with keys, firmware and
+// roms) move to /data/prosperoeden, where replacing the app cannot take them away: an update
+// that replaces the whole folder left the app without its keys and games. Both are on /data, so
+// it is a rename of each folder. Nothing moves unless all of it can: a folder chosen in Settings,
+// or anything already in /data/prosperoeden, leaves everything where it is.
+static void MoveGameFilesOutOfTheApp() {
+    const std::string from = std::string{Eden::kInstallDir} + "/assets", to = Eden::kDefaultAssetsDir;
+    const std::string saved = Eden::LoadSavedAssetsDir();
+    if ((!saved.empty() && saved != from) || !Eden::FileExists(from + "/keys/prod.keys") ||
+        Eden::FileExists(to + "/keys/prod.keys"))
+        return;
+    static constexpr const char* kFolders[] = {"keys", "firmware", "roms", "updates", "mods", "ryujinx", "save-import"};
+    (void)mkdir(to.c_str(), 0777);
+    for (const char* folder : kFolders) {
+        const std::string target = to + "/" + folder;
+        if (Eden::DirectoryExists(from + "/" + folder) && rmdir(target.c_str()) != 0 && errno != ENOENT) {
+            Eden::Report("game files", ("Left in the app's folder: " + target + " already holds files").c_str());
+            return;
+        }
+    }
+    int moved = 0;
+    for (const char* folder : kFolders) {
+        const std::string source = from + "/" + folder, target = to + "/" + folder;
+        if (!Eden::DirectoryExists(source)) continue;
+        if (std::rename(source.c_str(), target.c_str()) != 0) {
+            Eden::Report("game files", ("Could not move " + source + " to " + target + ": " + std::strerror(errno)).c_str());
+            continue;
+        }
+        ++moved;
+    }
+    if (!saved.empty()) (void)Eden::SaveAssetsDir(to);
+    Eden::Report("game files", (std::to_string(moved) + " folders moved from " + from + " to " + to +
+                                ", where an update of the app leaves them alone").c_str());
+}
+#endif
+
 // A game that has single Joy-Cons held sideways (their hold type, set by the game) is played on a
 // DualSense held as usual: the pad then turns the stick, the button places and the motion by a
 // quarter for each player who has such a Joy-Con (Pad::Grip). Asked a few times a second.
@@ -201,6 +245,11 @@ int main(int argc, char** argv) {
         // the packaged exact-title upstream helper is sent to the local elfldr. ProsperoEden
         // contains no locally implemented kernel mutation code. If neither path works, the app
         // keeps its sandbox paths.
+#if defined(EDEN_DEV_PROFILE)
+        // Development: a start without access, to see what the launcher says then.
+        if (access("/app0/no-filesystem-access.txt", F_OK) == 0) Eden::FilesystemAccessStatus() = 99;
+        else
+#endif
         Eden::FilesystemAccessStatus() = static_cast<int>(elevation::request(elevation::Capability::filesystem));
         Eden::BootTrace::Line("filesystem access returned status=%d, uid %d/%d gid %d/%d", Eden::FilesystemAccessStatus(),
                               static_cast<int>(getuid()), static_cast<int>(geteuid()), static_cast<int>(getgid()),
@@ -216,7 +265,10 @@ int main(int argc, char** argv) {
         // root, which may set its group.
         if (getegid() != getgid() && setegid(getgid()) != 0)
             Eden::Report("filesystem access", "Could not match the effective group; RADV's disk cache stays off");
-        if (Eden::FilesystemAccess()) MigrateSandboxData();
+        if (Eden::FilesystemAccess()) {
+            MigrateSandboxData();
+            MoveGameFilesOutOfTheApp();
+        }
         for (const auto& folder : {Eden::UserDir(), Eden::ConfigDir(), Eden::CoversDir(), Eden::LogsDir()}) {
             std::error_code folder_error;
             std::filesystem::create_directories(folder, folder_error);
@@ -239,14 +291,10 @@ int main(int argc, char** argv) {
 #endif
         if (!std::freopen(Eden::LogFile("stderr.log").c_str(), "w", stderr) ||
             !std::freopen(Eden::LogFile("heap.log").c_str(), "w", stdout)) return 2;
-        std::setvbuf(stderr, nullptr, _IONBF, 0);
-        // Batch SDK success traces; phase receipts still flush explicitly.
-        static char stdout_buffer[64 * 1024];
-        if (std::setvbuf(stdout, stdout_buffer, _IOFBF, sizeof(stdout_buffer)) != 0) return 2;
-        // Console storage writes take ~25 ms each; background threads copy both streams to disk.
-        static Eden::LogPipe stderr_pipe, stdout_pipe;
-        if (!stderr_pipe.Attach(stderr) || !stdout_pipe.Attach(stdout))
-            Eden::Report("logs", "Asynchronous log writing unavailable; writing directly");
+        // Console storage writes take ~25 ms each; a background thread writes both streams out,
+        // unless Settings > Diagnostics asks for every line at once (to find a crash).
+        static Eden::LogFlusher log_flusher;
+        if (!log_flusher.Start(Eden::LoadPreferences().immediate_logs)) return 2;
         Eden::Crash::Install(Eden::LogsDir(), Eden::kAppVersion, last_crash.restarted);
         Eden::BootTrace::Ready(Eden::LogsDir(), Eden::FilesystemAccess());
         Eden::BootTrace::Line("logs and crash handler ready (%s)", Eden::LogsDir().c_str());
@@ -409,6 +457,11 @@ int main(int argc, char** argv) {
         }
 #endif
 #endif
+        Common::FS::CreateEdenPaths();
+        Eden::Performance::PlatformChecks();
+        Common::Log::Initialize();
+        Eden::Multiplayer::SetDetailedLogging(Eden::LoadPreferences().detailed_logging);
+        Eden::Multiplayer::RoomClient rooms;
         for (;;) {
         Eden::StopLimit::End();  // whatever game ran before is gone
 #ifdef EDEN_PS5_OPENGL
@@ -474,11 +527,11 @@ int main(int argc, char** argv) {
             throw std::runtime_error("Development ROM not found");
         } else {
             Eden::BootTrace::Line("opening the launcher");
-            selected_game = SelectProsperoEdenGame(launch_error);
+            selected_game = SelectProsperoEdenGame(rooms, launch_error);
         }
 #else
         Eden::BootTrace::Line("opening the launcher");
-        selected_game = SelectProsperoEdenGame(launch_error);
+        selected_game = SelectProsperoEdenGame(rooms, launch_error);
 #endif
         Eden::BootTrace::Line("launcher closed: %s", selected_game.empty() ? "no game (quit)" : "a game was chosen");
         }
@@ -495,6 +548,8 @@ int main(int argc, char** argv) {
         }
         try {
         launch_error.clear();
+        if (!rooms.BeginGame()) throw std::runtime_error("Join a room successfully or leave it before starting a game.");
+        SCOPE_EXIT { rooms.EndGame(); };
 #ifdef EDEN_DEV_VULKAN
         Eden::Performance::vulkan_cost_enabled = std::filesystem::exists(Eden::AppFile("cost-run.txt"));
         const bool performance_run = std::filesystem::exists(Eden::AppFile("performance-run.txt"));
@@ -625,10 +680,9 @@ int main(int argc, char** argv) {
         if (Common::FS::GetEdenPath(Common::FS::EdenPath::EdenDir) != user_dir) return 2;
         std::puts("[headless-startup] absolute_paths_ready");
 #endif
-#ifdef PS5_NATIVE
-        if (game) Eden::Performance::PlatformChecks();
-#endif
+#ifndef PS5_NATIVE
         Common::Log::Initialize();
+#endif
         if (game) {
             Common::Log::Filter filter;
             filter.SetClassLevel(Common::Log::Class::Service_FS, Common::Log::Level::Info);
@@ -865,6 +919,72 @@ int main(int argc, char** argv) {
             Settings::values.resolution_setup.SetValue(resolutions[resolution]);
             Settings::values.scaling_filter.SetValue(filters[filter]);
             Settings::UpdateRescalingInfo();
+#ifdef EDEN_PS5_FRAMEGEN
+            // Lossless Scaling frame generation (EDEN_PS5_FRAMEGEN, headless/vulkan.cmake).
+            // Settings > Video's switch, or the game's own in Library > Triangle > Video, asks
+            // for it. The app folder's framegen.txt overrides all of it, the way block-list.txt
+            // turns the block list on: its first number is the target rate in Hz, its second the
+            // multiplier.
+            //
+            // Eden's two controls work the way Eden defines them (settings.cpp). A target rate
+            // makes the pacer add as many frames as that rate needs, up to Eden's own maximum;
+            // "auto" passes 0 and leaves the multiplier in charge, which is the ratio Eden uses
+            // when no target is asked for. Per session, and before the renderer starts: the
+            // swapchain and the presentation manager read them as they are created. Vulkan only,
+            // and only when the build has the feature at all (it needs the user's own
+            // Lossless.dll).
+            {
+                const auto at = [](int index, auto count) {
+                    return std::clamp(index, 0, static_cast<int>(count) - 1);
+                };
+                const int target_index =
+                    at(video.frame_gen_target, std::size(Eden::kFrameGenTargetHz));
+                const int multiplier_index =
+                    at(video.frame_gen_multiplier, std::size(Eden::kFrameGenMultiplierValue));
+                int target = Eden::kFrameGenTargetHz[target_index];
+                int multiplier = Eden::kFrameGenMultiplierValue[multiplier_index];
+                int override_rate = -1;
+                int override_multiplier = -1;
+                std::ifstream frame_gen_file(Eden::AppFile("framegen.txt"));
+                (void)(frame_gen_file >> override_rate);
+                (void)(frame_gen_file >> override_multiplier);
+                if (override_rate > 0) target = override_rate;
+                if (override_multiplier >= 2) multiplier = override_multiplier;
+                const bool active = (override_rate >= 0 || override_multiplier >= 0 || video.frame_gen) &&
+                                    video.backend == Eden::GraphicsBackend::Vulkan;
+                Settings::values.frame_gen.SetValue(active);
+                Settings::values.frame_gen_target_rate.SetValue(
+                    active ? static_cast<unsigned>(std::min(target, 240)) : 0u);
+                Settings::values.frame_gen_multiplier.SetValue(
+                    static_cast<unsigned>(std::clamp(multiplier, 2, 4)));
+                if (active)
+                {
+                    // Both of frame generation's gates give up silently, so a session that
+                    // cannot run it looks exactly like one that never asked: the shaders load
+                    // only from the user's own Lossless Scaling library, and the shader stage
+                    // needs Vulkan memory model plus robustBufferAccess2's null descriptors.
+                    // Say what this session found, in the log and in the crash report, so the
+                    // answer does not need another console round trip.
+                    const auto folder = Common::FS::GetEdenPath(Common::FS::EdenPath::LosslessDir);
+                    const auto status =
+                        static_cast<unsigned>(VideoCore::FrameGen::GetInstalledLosslessStatus());
+                    constexpr const char* kLosslessStates[] = {
+                        "ok",         "Lossless.dll not installed", "Lossless.dll unreadable",
+                        "not a PE",   "no LSFG shaders in it",      "shader translation failed",
+                        "shader cache unusable"};
+                    Eden::Report("launch",
+                                 ("Frame generation: " +
+                                  std::string(target > 0 ? std::to_string(target) + " Hz target"
+                                                         : std::to_string(multiplier) + "x multiplier") +
+                                  "; " + folder.string() +
+                                  ": " + (status < std::size(kLosslessStates) ? kLosslessStates[status]
+                                                                             : "unknown") +
+                                  "; null descriptors " +
+                                  (Eden::DevVulkan::disable_null_descriptor ? "off" : "on"))
+                                     .c_str());
+                }
+            }
+#endif
             // The output's refresh rate while the game runs (display_refresh.h): the renderer asks
             // for it as it opens the output.
             const int refresh = video.refresh;
@@ -1018,6 +1138,7 @@ int main(int argc, char** argv) {
             // one. The handheld is a controller of its own, for player 1 only.
             Eden::session_controller = controls.controller;
             const bool handheld = Eden::ControllerSetting(controls.controller) == Settings::ControllerType::Handheld;
+            Eden::handheld_in_use = handheld;
             for (std::size_t index = 0; index < Eden::Pad::kMaxPlayers; ++index) {
                 auto& player = Settings::values.players.GetValue()[index];
                 player.connected = handheld ? false : index == 0 || (connected & (1u << index)) != 0;
@@ -1085,6 +1206,7 @@ int main(int argc, char** argv) {
                     bool exited = false;
                     bool captured = false;
                     bool return_to_menu = false;
+                    bool room_lost = false;
                     std::exception_ptr failure;
                     std::string guest_fault;
                 };
@@ -1155,6 +1277,7 @@ int main(int argc, char** argv) {
                     }
                 });
 #endif
+                Eden::Loading::Set(Eden::Loading::Step::game);
                 Eden::BootTrace::Line("loading the game");
                 Core::SystemResultStatus loaded;
                 try {
@@ -1192,6 +1315,7 @@ int main(int argc, char** argv) {
 #endif
                 Eden::BootTrace::Line("game loaded (status %u)", static_cast<unsigned>(loaded));
                 Eden::Report("loader", "Game loaded; initializing renderer");
+                Eden::Loading::Set(Eden::Loading::Step::graphics);
 #ifdef EDEN_PS5_OPENGL
                 // Retain the failure, then release CPU readiness and complete normal
                 // shutdown before reporting it. Unwinding before OnGpuReady can hang.
@@ -1227,6 +1351,7 @@ int main(int argc, char** argv) {
                     // every five seconds so a slow build can be told apart from a stalled one.
                     std::atomic<size_t> built{0}, total{0};
                     std::atomic<bool> counted{false};
+                    Eden::Loading::Set(Eden::Loading::Step::shaders);
                     const auto load_start = std::chrono::steady_clock::now();
                     std::jthread reporter([&](std::stop_token stop) {
 #if defined(EDEN_DEV_PROFILE) && defined(PS5_NATIVE)
@@ -1250,6 +1375,7 @@ int main(int argc, char** argv) {
                         [&](VideoCore::LoadCallbackStage stage, size_t value, size_t count) {
                             if (stage != VideoCore::LoadCallbackStage::Build) return;
                             built = value;
+                            Eden::Loading::Shaders(value, count);
                             total = count;
                             counted = true;
 #if defined(EDEN_DEV_PROFILE) && defined(PS5_NATIVE)
@@ -1327,6 +1453,7 @@ int main(int argc, char** argv) {
                     jit_list.Start(system.GetApplicationProcessProgramID(), build, code_start, code_end - code_start);
                 }
                 Eden::TakeGuestFault(); // Nothing from an earlier session belongs to this one.
+                Eden::Loading::Set(Eden::Loading::Step::starting);
                 system.Run();
 #if defined(EDEN_DEV_PROFILE) && defined(PS5_NATIVE)
                 Eden::Stall::Trace("main running");
@@ -1448,11 +1575,16 @@ int main(int argc, char** argv) {
 #else
                         (void)pad->TakeHudToggle();
 #endif
-                        if (pad->TakeReturnToMenu()) {
+                        bool room_lost = false;
+#ifdef PS5_NATIVE
+                        room_lost = rooms.GameConnectionLost();
+#endif
+                        if (pad->TakeReturnToMenu() || room_lost) {
                             // From here the player is waiting to leave (stop_limit.h).
                             Eden::StopLimit::Begin();
                             std::lock_guard lock(completion->mutex);
                             completion->return_to_menu = true;
+                            completion->room_lost = room_lost;
                             completion->wake.notify_one();
                             break;
                         }
@@ -1555,6 +1687,10 @@ int main(int argc, char** argv) {
                     completion->wake.wait_for(lock, std::chrono::milliseconds(wait_ms), completed);
                     const bool guest_exited = completion->exited;
                     return_to_menu = completion->return_to_menu;
+#ifdef PS5_NATIVE
+                    if (completion->room_lost)
+                        launch_error = "The room connection was lost. Rejoin from Multiplayer before launching again.";
+#endif
                     session_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - session_start).count();
                     if (!guest_exited && !game) {
                         std::fputs("Guest exit timed out\n", stderr);

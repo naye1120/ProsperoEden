@@ -143,12 +143,16 @@ msgstr ""
 msgid "Australia"
 msgstr ""
 
+#: pe/ui/game_options.cpp, pe/ui/settings.cpp
+msgid "Auto"
+msgstr ""
+
 #: pe/ui/game_options.cpp
 msgid "Automatic"
 msgstr ""
 
 #. Button hint: go back one screen.
-#: pe/ui/browse.cpp, pe/ui/game_options.cpp, pe/ui/library.cpp, pe/ui/pairing.cpp, pe/ui/profiles.cpp, pe/ui/remote.cpp, pe/ui/save_sync.cpp, pe/ui/settings.cpp, pe/ui/update.cpp
+#: pe/ui/browse.cpp, pe/ui/game_options.cpp, pe/ui/library.cpp, pe/ui/multiplayer.cpp, pe/ui/pairing.cpp, pe/ui/profiles.cpp, pe/ui/remote.cpp, pe/ui/save_sync.cpp, pe/ui/settings.cpp, pe/ui/update.cpp
 msgid "Back"
 msgstr ""
 
@@ -167,7 +171,7 @@ msgid "Bilinear"
 msgstr ""
 
 #. Button hint: move through the list.
-#: pe/ui/browse.cpp
+#: pe/ui/browse.cpp, pe/ui/multiplayer.cpp
 msgid "Browse"
 msgstr ""
 
@@ -177,6 +181,14 @@ msgstr ""
 
 #: pe/ui/settings.cpp
 msgid "Browse settings"
+msgstr ""
+
+#: pe/ui/settings.cpp
+msgid "Browse the public directory"
+msgstr ""
+
+#: pe/ui/multiplayer.cpp
+msgid "Browse the public directory and choose a room."
 msgstr ""
 
 #. Which controller button presses each of the game's buttons.
@@ -290,6 +302,26 @@ msgstr ""
 msgid "Compiles the code a game used before as it starts, so new areas stutter less."
 msgstr ""
 
+#: pe/ui/multiplayer.cpp
+msgid "Connect using a room address, port and password."
+msgstr ""
+
+#: pe/ui/home.cpp, pe/ui/multiplayer.cpp, pe/ui/settings.cpp
+msgid "Connected"
+msgstr ""
+
+#: pe/ui/multiplayer.cpp
+msgid "Connecting..."
+msgstr ""
+
+#: pe/ui/multiplayer.cpp
+msgid "Connection failed"
+msgstr ""
+
+#: pe/ui/multiplayer.cpp
+msgid "Connection problem"
+msgstr ""
+
 #: pe/ui/library.cpp
 msgid "Console mode"
 msgstr ""
@@ -352,6 +384,10 @@ msgstr ""
 
 #: pe/ui/browse.cpp, pe/ui/game_options.cpp, pe/ui/library.cpp, pe/ui/profiles.cpp
 msgid "Could not save. Please try again."
+msgstr ""
+
+#: pe/ui/multiplayer.cpp
+msgid "Could not start the connection or save its settings."
 msgstr ""
 
 #. The DualSense button labelled CREATE: keep the label if the language's players do.
@@ -530,6 +566,10 @@ msgstr ""
 msgid "Eden emulator for PlayStation 5"
 msgstr ""
 
+#: pe/ui/settings.cpp
+msgid "Eden's debug messages in the logs of a game."
+msgstr ""
+
 #. Label of the shortcut that ends the running game.
 #: pe/ui/settings.cpp
 msgid "END GAME"
@@ -545,6 +585,10 @@ msgstr ""
 
 #: host/fake_services.cpp, settings_store.h
 msgid "English (US)"
+msgstr ""
+
+#: pe/ui/multiplayer.cpp
+msgid "Enter a UDP port between 1 and 65535."
 msgstr ""
 
 #: eden_services.cpp
@@ -651,6 +695,22 @@ msgstr ""
 msgid "FPS OVERLAY"
 msgstr ""
 
+#: pe/ui/game_options.cpp, pe/ui/settings.cpp
+msgid "Frame gen multiplier"
+msgstr ""
+
+#: pe/ui/game_options.cpp, pe/ui/settings.cpp
+msgid "Frame gen target"
+msgstr ""
+
+#: pe/ui/game_options.cpp, pe/ui/settings.cpp
+msgid "Frame generation"
+msgstr ""
+
+#: pe/ui/game_options.cpp, pe/ui/settings.cpp
+msgid "Frame generation needs Lossless.dll, from Lossless Scaling, in the lossless folder."
+msgstr ""
+
 #: settings_store.h
 msgid "French"
 msgstr ""
@@ -737,6 +797,10 @@ msgstr ""
 msgid "GETTING STARTED"
 msgstr ""
 
+#: pe/ui/multiplayer.cpp
+msgid "Go offline"
+msgstr ""
+
 #: pe/ui/settings.cpp
 msgid "Graphics backend and how games are scaled to your TV."
 msgstr ""
@@ -785,6 +849,10 @@ msgstr ""
 msgid "IN USE"
 msgstr ""
 
+#: pe/ui/multiplayer.cpp
+msgid "Incompatible"
+msgstr ""
+
 #: pe/ui/save_sync.cpp
 msgid "It goes to the server."
 msgstr ""
@@ -813,6 +881,22 @@ msgstr ""
 msgid "Japanese"
 msgstr ""
 
+#: pe/ui/multiplayer.cpp
+msgid "Join a room before launching a game, then choose Local Wireless in the game."
+msgstr ""
+
+#: pe/ui/launcher.cpp
+msgid "Join a room successfully or leave it before starting a game."
+msgstr ""
+
+#: pe/ui/settings.cpp
+msgid "Join an Eden room, then choose Local Wireless in a supported game. Everyone needs a compatible game version."
+msgstr ""
+
+#: pe/ui/multiplayer.cpp
+msgid "Join room"
+msgstr ""
+
 #. keys, firmware and roms are folder names (unchanged). TRIANGLE is the controller's triangle button, in capitals.
 #: pe/ui/browse.cpp
 msgid "Keep keys, firmware and roms folders together. TRIANGLE uses the folder shown."
@@ -820,6 +904,10 @@ msgstr ""
 
 #: pe/ui/save_sync.cpp
 msgid "Keep this console's"
+msgstr ""
+
+#: pe/ui/settings.cpp
+msgid "Keeps the last line before a crash, but games stutter. From the next start."
 msgstr ""
 
 #: pe/ui/settings.cpp
@@ -873,6 +961,26 @@ msgstr ""
 msgid "Launch game"
 msgstr ""
 
+#: pe/ui/multiplayer.cpp
+msgid "Leave / cancel"
+msgstr ""
+
+#: pe/ui/multiplayer.cpp
+msgid "Leave room"
+msgstr ""
+
+#: pe/ui/multiplayer.cpp
+msgid "Leave the room before changing connection details."
+msgstr ""
+
+#: pe/ui/profiles.cpp
+msgid "Leaving the room. Select the profile again when disconnected."
+msgstr ""
+
+#: pe/ui/multiplayer.cpp
+msgid "Leaving..."
+msgstr ""
+
 #: pe/ui/game_options.cpp
 msgid "Left Joy-Con"
 msgstr ""
@@ -900,6 +1008,10 @@ msgstr ""
 
 #: pe/ui/pairing.cpp, pe/ui/settings.cpp
 msgid "Linked"
+msgstr ""
+
+#: pe/ui/multiplayer.cpp
+msgid "Loading public rooms..."
 msgstr ""
 
 #: pe/ui/settings.cpp
@@ -939,6 +1051,14 @@ msgstr ""
 #. Changes to a game that the player added: patches, replaced files, cheats. Keep the word 'mod' if the language uses it.
 #: pe/ui/library.cpp
 msgid "Mods"
+msgstr ""
+
+#: pe/ui/home.cpp, pe/ui/multiplayer.cpp, pe/ui/settings.cpp
+msgid "Multiplayer"
+msgstr ""
+
+#: pe/ui/settings.cpp
+msgid "MULTIPLAYER"
 msgstr ""
 
 #: pe/ui/game_options.cpp, pe/ui/settings.cpp
@@ -981,6 +1101,14 @@ msgstr ""
 msgid "NEXT START"
 msgstr ""
 
+#: pe/ui/multiplayer.cpp
+msgid "Nickname"
+msgstr ""
+
+#: pe/ui/multiplayer.cpp
+msgid "Nickname: {0}"
+msgstr ""
+
 #: pe/ui/library.cpp
 msgid "No cover art"
 msgstr ""
@@ -1013,6 +1141,10 @@ msgstr ""
 #. {0} is a folder; roms/ is a folder name (unchanged).
 #: pe/ui/library.cpp
 msgid "No mods for this game yet. Copy each mod's folder to {0}, next to roms/."
+msgstr ""
+
+#: pe/ui/multiplayer.cpp
+msgid "No public rooms are available."
 msgstr ""
 
 #: pe/ui/library.cpp
@@ -1086,7 +1218,7 @@ msgstr ""
 msgid "Off"
 msgstr ""
 
-#: pe/ui/settings.cpp
+#: pe/ui/multiplayer.cpp, pe/ui/settings.cpp
 msgid "Offline"
 msgstr ""
 
@@ -1133,7 +1265,7 @@ msgid "Output resolution"
 msgstr ""
 
 #. Button hint: jump a page of the list (L1 / R1).
-#: pe/ui/browse.cpp, pe/ui/update.cpp
+#: pe/ui/browse.cpp, pe/ui/multiplayer.cpp, pe/ui/update.cpp
 msgid "Page"
 msgstr ""
 
@@ -1163,6 +1295,10 @@ msgstr ""
 
 #: pe/ui/browse.cpp
 msgid "Parent folder"
+msgstr ""
+
+#: pe/ui/multiplayer.cpp
+msgid "Password"
 msgstr ""
 
 #. What a mod is made of: a change to the game's program (not a game update).
@@ -1250,6 +1386,14 @@ msgstr ""
 msgid "Press again to replace this game's save. The current one is backed up."
 msgstr ""
 
+#: pe/ui/multiplayer.cpp
+msgid "Private room"
+msgstr ""
+
+#: pe/ui/settings.cpp
+msgid "PRIVATE ROOM"
+msgstr ""
+
 #: pe/ui/game_options.cpp
 msgid "Pro Controller"
 msgstr ""
@@ -1290,6 +1434,10 @@ msgstr ""
 msgid "ProsperoEden closes to finish the update."
 msgstr ""
 
+#: eden_services.cpp
+msgid "ProsperoEden could not get access to the console's storage, so it cannot read your settings, saves and games. Nothing was changed. Close ProsperoEden and open it again. (Code {0})"
+msgstr ""
+
 #: pe/ui/browse.cpp
 msgid "ProsperoEden is an unofficial PS5 port brought to you by BlackBearReloaded."
 msgstr ""
@@ -1315,6 +1463,14 @@ msgstr ""
 #. {0} is the version, for example v1.000.030.
 #: pe/ui/home.cpp
 msgid "PS5 EDITION  /  {0}"
+msgstr ""
+
+#: pe/ui/multiplayer.cpp
+msgid "Public rooms"
+msgstr ""
+
+#: pe/ui/settings.cpp
+msgid "PUBLIC ROOMS"
 msgstr ""
 
 #: pe/ui/remote.cpp
@@ -1361,6 +1517,10 @@ msgstr ""
 #. A switch: no drifting, sliding or zooming on screen.
 #: pe/ui/settings.cpp
 msgid "Reduce motion"
+msgstr ""
+
+#: pe/ui/multiplayer.cpp
+msgid "Refresh"
 msgstr ""
 
 #. Setting: how many times a second the TV picture is refreshed while a game runs (60 or 120 Hz).
@@ -1415,6 +1575,18 @@ msgstr ""
 
 #: eden_services.cpp, pe/ui/launcher.cpp
 msgid "ROM missing from the game files folder"
+msgstr ""
+
+#: pe/ui/multiplayer.cpp
+msgid "Room address"
+msgstr ""
+
+#: pe/ui/settings.cpp
+msgid "Room address and UDP port"
+msgstr ""
+
+#: pe/ui/multiplayer.cpp
+msgid "Room {0} of {1}"
 msgstr ""
 
 #: settings_store.h
@@ -1520,7 +1692,7 @@ msgid "Scroll"
 msgstr ""
 
 #. Button hint: choose the highlighted item (not the Select button).
-#: pe/ui/game_options.cpp, pe/ui/home.cpp, pe/ui/library.cpp, pe/ui/pairing.cpp, pe/ui/remote.cpp, pe/ui/save_sync.cpp, pe/ui/settings.cpp, pe/ui/update.cpp
+#: pe/ui/game_options.cpp, pe/ui/home.cpp, pe/ui/library.cpp, pe/ui/multiplayer.cpp, pe/ui/pairing.cpp, pe/ui/remote.cpp, pe/ui/save_sync.cpp, pe/ui/settings.cpp, pe/ui/update.cpp
 msgid "Select"
 msgstr ""
 
@@ -1585,6 +1757,10 @@ msgstr ""
 
 #: pe/ui/settings.cpp
 msgid "Show or hide the FPS overlay"
+msgstr ""
+
+#: pe/ui/multiplayer.cpp
+msgid "Showing the previous list."
 msgstr ""
 
 #: pe/ui/pairing.cpp
@@ -1742,6 +1918,10 @@ msgstr ""
 msgid "The game starts when the download is done."
 msgstr ""
 
+#: pe/ui/multiplayer.cpp
+msgid "The keyboard could not be opened."
+msgstr ""
+
 #: pe/ui/settings.cpp
 msgid "The language games use when they offer it."
 msgstr ""
@@ -1808,6 +1988,10 @@ msgstr ""
 msgid "This game's settings cannot be saved (no title ID)."
 msgstr ""
 
+#: pe/ui/multiplayer.cpp
+msgid "This room uses a different protocol version."
+msgstr ""
+
 #. ryujinx/, save-import/ and roms/ are folder names (unchanged); {0} is the game's ID.
 #: eden_services.cpp
 msgid "To import, copy a Ryujinx folder to ryujinx/ or a save to save-import/{0}/, next to roms/."
@@ -1836,7 +2020,11 @@ msgstr ""
 msgid "Turn on or off"
 msgstr ""
 
-#: pe/ui/library.cpp
+#: pe/ui/multiplayer.cpp
+msgid "UDP port"
+msgstr ""
+
+#: pe/ui/game_options.cpp, pe/ui/library.cpp, pe/ui/settings.cpp
 msgid "Unavailable"
 msgstr ""
 
@@ -1995,6 +2183,10 @@ msgstr ""
 msgid "with {0}"
 msgstr ""
 
+#: pe/ui/settings.cpp
+msgid "Write logs at once"
+msgstr ""
+
 #: pe/ui/save_sync.cpp
 msgid "You are asked again next time."
 msgstr ""
@@ -2056,7 +2248,7 @@ msgid "{0} games installed"
 msgstr ""
 
 #. {0} is 60 or 120 (hertz).
-#: pe/ui/library.cpp
+#: pe/ui/game_options.cpp, pe/ui/library.cpp, pe/ui/settings.cpp
 msgid "{0} Hz"
 msgstr ""
 
@@ -2106,6 +2298,10 @@ msgstr ""
 
 #: pe/ui/save_sync.cpp
 msgid "{0} on {1}"
+msgstr ""
+
+#: pe/ui/multiplayer.cpp
+msgid "{0} public rooms"
 msgstr ""
 
 #: pe/ui/remote.cpp, pe/ui/settings.cpp

@@ -1,6 +1,14 @@
 if(NOT PS5_NATIVE)
     message(FATAL_ERROR "EDEN_PS5_VULKAN requires PS5_NATIVE")
 endif()
+# Eden's Lossless Scaling frame generation. Upstream gates it behind ENABLE_LSFG,
+# which cmake_dependent_option pins to the "ANDROID" condition (CMakeLists.txt:
+# "Only Android"), so -DENABLE_LSFG=ON alone is silently forced back OFF. Enable
+# it here rather than with -DANDROID=ON: that would also flip ENABLE_OPENGL and
+# other options OFF, and the console build needs the OpenGL renderer too.
+# On in every build: without the user's own Lossless.dll it does nothing, and the launcher shows
+# its settings greyed out (Services::frame_gen_state).
+option(EDEN_PS5_FRAMEGEN "Build Eden's Lossless Scaling frame generation (LSFG)" ON)
 execute_process(COMMAND python3 "${PORT_ROOT}/tools/prepare-vulkan-port.py"
     "${PROJECT_SOURCE_DIR}" "${PORT_BUILD_DIR}" COMMAND_ERROR_IS_FATAL ANY)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
@@ -49,7 +57,10 @@ set_property(SOURCE
     "${PORT_BUILD_DIR}/vulkan_renderer.cpp" "${PORT_BUILD_DIR}/vulkan_blit_screen.cpp"
     "${PORT_BUILD_DIR}/vulkan_rasterizer.cpp" "${PORT_BUILD_DIR}/vulkan_window_adapt_pass.cpp"
     TARGET_DIRECTORY video_core APPEND PROPERTY OBJECT_DEPENDS
-    "${PORT_BUILD_DIR}/include/video_core/renderer_vulkan/vk_present_manager.h")
+    "${PORT_BUILD_DIR}/include/video_core/renderer_vulkan/vk_present_manager.h"
+    # FrameGen is embedded by value in RendererVulkan too. The port's copy of its header adds the
+    # member that reports generation once per session (tools/prepare-vulkan-port.py).
+    "${PORT_BUILD_DIR}/include/video_core/renderer_vulkan/present/frame_gen.h")
 # Existing depfiles name the original header; rebuild all filter consumers once
 # when introducing the override so the shared struct layout stays consistent.
 set_property(SOURCE
@@ -92,4 +103,36 @@ endforeach()
 target_link_libraries(video_core PRIVATE "${vk_isolated}/libps5vk.a" "${vk_isolated}/libpsbc.a"
     "${PORT_ROOT}/build/stubs/libSceAgcDriver.so"
     "${sdk}/target/lib/libSceSysmodule.so")
+endif()
+
+# Lossless Scaling frame generation (EDEN_PS5_FRAMEGEN above). These are the
+# sources upstream adds under "if (ENABLE_LSFG)" in src/video_core/CMakeLists.txt;
+# paths are relative to src/video_core, like everything else in video_sources.
+if(EDEN_PS5_FRAMEGEN)
+    list(APPEND video_sources
+        frame_gen/lossless_dll.cpp
+        frame_gen/lsfg_translate.cpp
+        # The port's copies: prepare-vulkan-port.py adds the frame generation diagnostics to
+        # these two (tools/prepare-vulkan-port.py), so the generated files replace the originals.
+        "${PORT_BUILD_DIR}/vulkan_frame_gen.cpp"
+        "${PORT_BUILD_DIR}/vulkan_lsfg_shaders.cpp"
+        renderer_vulkan/present/frame_gen_pacer.cpp
+        renderer_vulkan/present/lsfg_alpha.cpp
+        renderer_vulkan/present/lsfg_beta.cpp
+        renderer_vulkan/present/lsfg_chain.cpp
+        renderer_vulkan/present/lsfg_common.cpp
+        renderer_vulkan/present/lsfg_delta.cpp
+        renderer_vulkan/present/lsfg_gamma.cpp
+        renderer_vulkan/present/lsfg_generate.cpp
+        renderer_vulkan/present/lsfg_mipmaps.cpp)
+    # Eden's own gate for those sources. PUBLIC, exactly as upstream declares it
+    # (src/video_core/CMakeLists.txt): the flag changes members of RendererVulkan
+    # and PresentManager, so every consumer of their headers must see the same
+    # layout. The port's generated overrides of those headers carry the same
+    # #ifdef blocks, so the whole target stays consistent.
+    target_compile_definitions(video_core PUBLIC HAS_LSFG)
+    # The port's frontend gate, so headless/main.cpp can ask for frame generation
+    # (and say so in the log). eden-headless is created after this file is
+    # included, so a directory-level definition reaches it.
+    add_compile_definitions(EDEN_PS5_FRAMEGEN=1)
 endif()

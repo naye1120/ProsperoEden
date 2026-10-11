@@ -74,6 +74,7 @@ struct Option
     std::vector<std::string> values;
     int value = -1;
     std::string usual;
+    bool locked = false; // shown greyed out: it cannot be changed now
 };
 
 bool *performance_switch(Preferences &prefs, int index)
@@ -105,6 +106,25 @@ std::vector<Option> options(int category, const GameSettings &game, Preferences 
                         pick(services.filter_labels(), prefs.filter)});
         rows.push_back({tr("Refresh rate"), rates, game.refresh, pick(rates, prefs.refresh)});
         rows.push_back({tr("FPS overlay"), off_on, game.hud, on_off(prefs.hud)});
+        // Appended last on purpose: the rows above keep the indexes with_option() and the
+        // saved game settings use. Vulkan only -- the OpenGL renderer has no frame generation.
+        // Not shown in a build without it; greyed out while the user's Lossless.dll is missing.
+        const int frame_gen = services.frame_gen_state();
+        if (frame_gen == 0)
+            break;
+        const bool locked = frame_gen == 1;
+        rows.push_back({tr("Frame generation"), off_on, game.frame_gen, on_off(prefs.frame_gen), locked});
+        // Indexes match the settings layer's tables (settings_store.h). Eden's two controls work the
+        // way Eden defines them: a target rate makes the pacer add as many frames as that rate
+        // needs, up to Eden's own maximum; "Auto" asks for none and leaves the multiplier in charge.
+        const std::vector<std::string> multipliers = {"2x", "3x", "4x"};
+        const auto hz = [](const char *value) { return fill(tr("{0} Hz"), {value}); };
+        const std::vector<std::string> frames = {tr("Auto"), hz("60"), hz("90"), hz("120"), hz("144"),
+                                                 hz("240")};
+        rows.push_back({tr("Frame gen target"), frames, game.frame_gen_target,
+                        pick(frames, prefs.frame_gen_target), locked});
+        rows.push_back({tr("Frame gen multiplier"), multipliers, game.frame_gen_multiplier,
+                        pick(multipliers, prefs.frame_gen_multiplier), locked});
         break;
     }
     case category_performance:
@@ -158,7 +178,8 @@ GameSettings with_option(GameSettings game, int category, int row, int value, co
     {
     case category_video:
         (row == 0 ? game.renderer : row == 1 ? game.resolution : row == 2 ? game.filter :
-         row == 3 ? game.refresh : game.hud) = value;
+         row == 3 ? game.refresh : row == 4 ? game.hud : row == 5 ? game.frame_gen :
+         row == 6 ? game.frame_gen_target : game.frame_gen_multiplier) = value;
         break;
     case category_performance:
         game.performance[static_cast<std::size_t>(std::clamp(row, 0, 6))] = value;
@@ -198,7 +219,8 @@ int Launcher::game_overrides(int category) const
     {
     case category_video:
         return (game.renderer >= 0) + (game.resolution >= 0) + (game.filter >= 0) + (game.refresh >= 0) +
-               (game.hud >= 0);
+               (game.hud >= 0) + (game.frame_gen >= 0) + (game.frame_gen_target >= 0) +
+               (game.frame_gen_multiplier >= 0);
     case category_performance:
         return static_cast<int>(
             std::count_if(game.performance.begin(), game.performance.end(), [](int v) { return v >= 0; }));
@@ -261,6 +283,12 @@ void Launcher::press_game_options(Key key)
         open_mapping(true);
         return;
     }
+    if (option.locked)
+    {
+        say(tr("Frame generation needs Lossless.dll, from Lossless Scaling, in the lossless folder."), true);
+        cue(Cue::error);
+        return;
+    }
     // Settings' value (-1), then each of the game's choices.
     const int count = static_cast<int>(option.values.size());
     const int step = key == Key::left ? -1 : 1;
@@ -311,13 +339,17 @@ void Launcher::draw_game_options(Canvas &c, float open)
         const float top = row_top(row);
         list.push_opacity(option_rows_.row_alpha(row, kRowHeight));
         // The game's own choice, or "Default (what Settings has)".
-        const std::string value =
+        const std::string value = option.locked ? std::string{tr("Unavailable")} :
             option.value >= 0 ? pick(option.values, option.value) : fill(tr("Default ({0})"), {option.usual});
+        if (option.locked)
+            list.push_opacity(0.38f);
         const float taken = chooser(c, value, 1296.0f, baseline(top, kRowHeight, theme::kText24),
                                     row == option_rows_.selected ? 1.0f : 0.0f,
                                     option.value >= 0 ? theme::kLime : theme::kLimePale);
         text_shrink(c, option.name, 628.0f, baseline(top, kRowHeight, theme::kText24), theme::kText24,
                     theme::kValue, 664.0f - taken - 28.0f);
+        if (option.locked)
+            list.pop_opacity();
         list.pop_opacity();
     }
     list.pop_clip();

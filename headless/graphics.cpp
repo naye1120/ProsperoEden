@@ -16,6 +16,7 @@
 #include <cstring>
 #include <time.h>
 #include "hud.h"
+#include "network/network.h"
 #include "loading_scene_glsl.h"
 #include "preferences.h"
 #include "diagnostics.h"
@@ -40,6 +41,10 @@ namespace Eden {
 void PresentVulkanLoading(VideoCore::RendererBase& renderer);
 #endif
 namespace {
+int RoomPingMilliseconds() {
+    const auto member = Network::GetRoomMember().lock();
+    return member ? member->GetPingMilliseconds() : -1;
+}
 // What the loading screen's time carries for reduced motion (loading_scene.glsl): 1000 when the
 // player turned it on in Settings > Accessibility, read once.
 double LoadingCalm() {
@@ -48,6 +53,9 @@ double LoadingCalm() {
 }
 std::atomic<bool> hud_enabled{true};
 HudClock vulkan_hud_clock;
+// What the display is actually given: the guest's frames plus the ones frame generation
+// adds (CountPresentedFrame(), hud.h).
+HudClock vulkan_hud_output_clock;
 HudSnapshot vulkan_hud;
 double vulkan_hud_stats_time{}, vulkan_hud_speed{};
 bool vulkan_loading{};
@@ -277,7 +285,6 @@ public:
             std::printf("EDEN_DEV_FRAME frames=%u seconds=%.6f fps=%.3f worst_ms=%.3f total=%u\n",
                         sample_frames, now - sample_start, sample_frames / (now - sample_start),
                         worst_frame * 1000.0, presented_frames);
-            std::fflush(stdout);
             sample_start = now;
             sample_frames = 0;
             worst_frame = 0;
@@ -295,7 +302,6 @@ public:
                             sample_frames, now - sample_start,
                             sample_frames / (now - sample_start), sample_worst * 1000.0,
                             presented_frames);
-                std::fflush(stdout);
                 sample_start = now;
                 sample_frames = 0;
                 sample_worst = 0;
@@ -308,7 +314,7 @@ public:
             speed_percent = stats.emulation_speed * 100.0;
             last_stats = now;
         }
-        const auto text = FormatHudText(clock, speed_percent, "OGL");
+        const auto text = FormatHudText(clock, speed_percent, "OGL", RoomPingMilliseconds());
         if (hud_enabled.load(std::memory_order_relaxed)) DrawHud(text.data(), false);
         Check(eglSwapBuffers(display, surface), "eglSwapBuffers");
     }
@@ -342,8 +348,8 @@ private:
         SCOPE_EXIT { Cleanup(eglMakeCurrent(display, surface, surface, context), "loading restore"); };
         if (!loading_program) {
             const std::string fragment = std::string("#version 330 core\n") + kLoadingSceneGlsl +
-                "uniform vec2 size; uniform float seconds; out vec4 color;\n"
-                "void main(){ color = vec4(loading_scene(gl_FragCoord.xy, size, seconds), 1.0); }\n";
+                "uniform vec2 size; uniform float seconds; uniform uint state[24]; out vec4 color;\n"
+                "void main(){ color = vec4(loading_scene(gl_FragCoord.xy, size, seconds, state), 1.0); }\n";
             const char* sources[]{
                 "#version 330 core\nvoid main(){vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2);"
                 "gl_Position=vec4(p*2.0-1.0,0.0,1.0);}",
@@ -389,6 +395,9 @@ private:
         glViewport(0, 0, width, height);
         glUniform2f(glGetUniformLocation(loading_program, "size"), float(width), float(height));
         glUniform1f(glGetUniformLocation(loading_program, "seconds"), float(seconds));
+        // What the start is doing (hud.h).
+        const auto state = Loading::State();
+        glUniform1uiv(glGetUniformLocation(loading_program, "state[0]"), state.size(), state.data());
         glDrawArrays(GL_TRIANGLES, 0, 3);
         glFlush();
         return true;
@@ -403,11 +412,11 @@ private:
             const char* sources[]{
                 "#version 330 core\nvoid main(){vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2);"
                 "gl_Position=vec4(p*2.0-1.0,0.0,1.0);}",
-                "#version 330 core\nuniform uint glyphs[24]; uniform ivec2 origin; uniform int startup;"
+                "#version 330 core\nuniform uint glyphs[28]; uniform ivec2 origin; uniform int startup;"
                 "uniform float cell; out vec4 color;"
                 "void main(){ivec2 p=ivec2(gl_FragCoord.xy)-origin; bool ink=false;"
                 "if(p.x>=0&&p.y>=0){ivec2 c=ivec2(vec2(p)/cell);int i=c.x/4;int x=c.x%4;"
-                "if(i<24&&x<3&&c.y<5) ink=((glyphs[i]>>uint(c.y*3+2-x))&1u)!=0u;}"
+                "if(i<28&&x<3&&c.y<5) ink=((glyphs[i]>>uint(c.y*3+2-x))&1u)!=0u;}"
                 "color=startup!=0?(ink?vec4(0.7216,0.9490,0.0471,1.0):vec4(0.0196,0.0392,0.0039,1.0))"
                 ":(ink?vec4(0.9,0.95,1.0,1.0):vec4(0.025,0.04,0.075,0.5));}"};
             for (unsigned i = 0; i < 2; ++i) {
@@ -521,6 +530,7 @@ GraphicsWindow::GraphicsWindow(bool use_vulkan) : vulkan(use_vulkan) {
 #ifdef EDEN_PS5_VULKAN
     if (vulkan) {
         vulkan_hud_clock = {};
+        vulkan_hud_output_clock = {};
         vulkan_hud = MakeLoadingSnapshot(0);
         vulkan_hud_stats_time = vulkan_hud_speed = 0;
         window_info.type = Core::Frontend::WindowSystemType::PS5;
@@ -609,6 +619,15 @@ GraphicsWindow::~GraphicsWindow() {
     Cleanup(eglTerminate(display), "display");
     std::puts("EDEN_EGL_CLOSED");
 }
+void CountPresentedFrame() {
+    // The renderer calls this for every frame it hands to the present manager, so F in the HUD is
+    // the output rate. Same clock and timestamp as OnFrameDisplayed(); only the count differs.
+    const double now = std::chrono::duration<double>(
+                           std::chrono::steady_clock::now().time_since_epoch())
+                           .count();
+    vulkan_hud_output_clock.Present(now);
+}
+
 void GraphicsWindow::OnFrameDisplayed() {
 #ifdef PS5_NATIVE
     if (vulkan) {
@@ -624,7 +643,10 @@ void GraphicsWindow::OnFrameDisplayed() {
             vulkan_hud_speed = system->GetAndResetPerfStats().emulation_speed * 100.0;
             vulkan_hud_stats_time = now;
         }
-        vulkan_hud = MakeHudSnapshot(vulkan_hud_clock, vulkan_hud_speed);
+        vulkan_hud =
+            MakeHudSnapshot(vulkan_hud_clock, vulkan_hud_output_clock, vulkan_hud_speed,
+                            Eden::Display::output_millihertz.load(std::memory_order_relaxed) / 1000.0,
+                            RoomPingMilliseconds());
 #endif
         ++frame_total;
         if (frame_sample_start < 0) {
@@ -660,7 +682,6 @@ void GraphicsWindow::OnFrameDisplayed() {
                 // Composite runs on the GPU thread, so its owner CPU clock is valid here.
                 Eden::Performance::ReportGpuThread(frame_total);
 #endif
-                std::fflush(stdout);
                 frame_sample_start = now;
                 frame_sample_count = 0;
                 frame_sample_worst = 0;

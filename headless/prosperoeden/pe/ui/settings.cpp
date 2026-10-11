@@ -20,7 +20,7 @@ constexpr Rect kListPanel{108.0f, 188.0f, 820.0f, 720.0f};
 constexpr Rect kDetailPanel{980.0f, 188.0f, 820.0f, 720.0f};
 constexpr Rect kDialog{550.0f, 180.0f, 820.0f, 720.0f};
 constexpr float kRowsTop = 264.0f;
-constexpr float kRowHeight = 54.0f;
+constexpr float kRowHeight = 50.0f;
 enum Category
 {
     kProfiles,
@@ -33,16 +33,17 @@ enum Category
     kFiles,
     kDownloads,
     kSaveSync,
+    kMultiplayer,
     kLanguage,
     kCategoryCount,
 };
 constexpr const char *kCategories[kCategoryCount] = {
     TR("Profiles"), TR("Video"), TR("Performance"), TR("Audio"), TR("Controls"), TR("Accessibility"),
-    TR("Diagnostics"), TR("Game files"), TR("Downloads"), TR("Save sync"), TR("Language")};
+    TR("Diagnostics"), TR("Game files"), TR("Downloads"), TR("Save sync"), TR("Multiplayer"), TR("Language")};
 // The same as headings: capitals differ by language, so each is its own text.
 constexpr const char *kHeadings[kCategoryCount] = {
     TR("PROFILES"), TR("VIDEO"), TR("PERFORMANCE"), TR("AUDIO"), TR("CONTROLS"), TR("ACCESSIBILITY"),
-    TR("DIAGNOSTICS"), TR("GAME FILES"), TR("DOWNLOADS"), TR("SAVE SYNC"), TR("LANGUAGE")};
+    TR("DIAGNOSTICS"), TR("GAME FILES"), TR("DOWNLOADS"), TR("SAVE SYNC"), TR("MULTIPLAYER"), TR("LANGUAGE")};
 
 // The Video dialog's rows, and the window that shows five of them (placed as a game's settings
 // are).
@@ -54,8 +55,14 @@ enum VideoRow : int
     video_filter,
     video_refresh,
     video_overlay,
+    // Frame generation: not shown in a build without it (Services::frame_gen_state).
+    video_frame_gen,
+    video_frame_gen_target,
+    video_frame_gen_multiplier,
     kVideoRows,
 };
+constexpr int kFrameGenTargets = 6;     // Auto, 60, 90, 120, 144, 240 Hz (settings_store.h)
+constexpr int kFrameGenMultipliers = 3; // 2x, 3x, 4x
 constexpr float kVideoRowsTop = 334.0f;
 constexpr float kVideoRowPitch = 96.0f;
 constexpr float kVideoRowHeight = 94.0f;
@@ -85,6 +92,9 @@ const char *output_name(int output)
 {
     return kOutputs[std::clamp(output, 0, 2)];
 }
+
+constexpr const char *kFrameGenTargetNames[] = {"", "60", "90", "120", "144", "240"};
+constexpr const char *kFrameGenMultiplierNames[] = {"2x", "3x", "4x"};
 
 const char *on_off(bool value)
 {
@@ -147,11 +157,14 @@ void Launcher::press_settings(Key key)
         case kSaveSync:
             open_sync_setup();
             break;
+        case kMultiplayer:
+            open_multiplayer();
+            break;
         case kVideo:
             open_modal(Modal::video);
             video_rows_.visible = kVideoRowsShown;
             video_rows_.pitch = kVideoRowPitch;
-            video_rows_.reset(kVideoRows, 0);
+            video_rows_.reset(dialog_rows(Modal::video), 0);
             break;
         case kPerformance:
             open_modal(Modal::performance);
@@ -200,7 +213,7 @@ void Launcher::draw_settings(Canvas &c)
         prefs_.mute ? tr("Muted") : percent(prefs_.volume),
         prefs_.vibration ? tr("Vibration on") : tr("Vibration off"),
         prefs_.large_text || prefs_.high_contrast || prefs_.reduce_motion ? tr("On") : "",
-        prefs_.detailed_logging ? tr("Detailed logs on") : "",
+        prefs_.detailed_logging ? tr("Detailed logs on") : prefs_.immediate_logs ? tr("On") : "",
         "",
         !sources_.configured ? std::string{tr("Not set up")} :
         sources_.list.size() == 1 ? sources_.list.front().name :
@@ -212,6 +225,7 @@ void Launcher::draw_settings(Canvas &c)
             return linked == 0 ? std::string{tr("Off")} : fill(tr("{0} of {1} profiles"), {std::to_string(linked),
                                                                                            std::to_string(sync_setup_.profiles.size())});
         }(),
+        services_.room_status().phase == Eden::Multiplayer::Phase::Connected ? tr("Connected") : tr("Off"),
         pick(services_.language_labels(), prefs_.language),
     };
     for (int row = 0; row < kCategoryCount; ++row)
@@ -342,6 +356,11 @@ void Launcher::draw_settings(Canvas &c)
             lines.push_back({tr("SYNC"), tr("Off")});
         break;
     }
+    case kMultiplayer:
+        about = tr("Join an Eden room, then choose Local Wireless in a supported game. Everyone needs a compatible game version.");
+        lines = {{tr("PUBLIC ROOMS"), tr("Browse the public directory")},
+                 {tr("PRIVATE ROOM"), tr("Room address and UDP port")}};
+        break;
     default:
         about = tr("The language games use when they offer it.");
         lines = {{tr("LANGUAGE"), pick(services_.language_labels(), prefs_.language)},
@@ -382,7 +401,7 @@ int Launcher::dialog_rows(Modal modal) const
     switch (modal)
     {
     case Modal::video:
-        return kVideoRows;
+        return services_.frame_gen_state() == 0 ? static_cast<int>(video_frame_gen) : static_cast<int>(kVideoRows);
     case Modal::performance:
         return kPerformanceRows;
     case Modal::audio:
@@ -396,8 +415,8 @@ int Launcher::dialog_rows(Modal modal) const
                (library_.selected < static_cast<int>(games_.size()) &&
                         !games_[static_cast<std::size_t>(library_.selected)].sources.empty() &&
                         !games_[static_cast<std::size_t>(library_.selected)].remote ? 1 : 0);
-    case Modal::controls:
-        // Vibration, the button mapping.
+    case Modal::controls:     // vibration, the button mapping
+    case Modal::diagnostics:  // detailed logging, logs written at once
         return 2;
     default:
         return 1;
@@ -419,6 +438,8 @@ float Launcher::dialog_row_top(Modal modal, int row) const
         return 334.0f + 96.0f * static_cast<float>(row);
     case Modal::controls: // under the shortcuts
         return 560.0f + 96.0f * static_cast<float>(row);
+    case Modal::diagnostics: // under the setup's state
+        return 500.0f + 102.0f * static_cast<float>(row);
     default:
         return 670.0f;
     }
@@ -481,6 +502,20 @@ void Launcher::press_dialog(Key key)
         }
         else if (option_ == video_refresh)
             prefs_.refresh = prefs_.refresh != 0 ? 0 : 1;
+        else if (option_ >= video_frame_gen && services_.frame_gen_state() != 2)
+        {
+            say(tr("Frame generation needs Lossless.dll, from Lossless Scaling, in the lossless folder."), true);
+            cue(Cue::error);
+            return;
+        }
+        else if (option_ == video_frame_gen)
+            prefs_.frame_gen = !prefs_.frame_gen;
+        else if (option_ == video_frame_gen_target)
+            prefs_.frame_gen_target =
+                (std::clamp(prefs_.frame_gen_target, 0, kFrameGenTargets - 1) + step + kFrameGenTargets) % kFrameGenTargets;
+        else if (option_ == video_frame_gen_multiplier)
+            prefs_.frame_gen_multiplier = (std::clamp(prefs_.frame_gen_multiplier, 0, kFrameGenMultipliers - 1) + step +
+                                           kFrameGenMultipliers) % kFrameGenMultipliers;
         else
             prefs_.hud = !prefs_.hud;
         break;
@@ -530,7 +565,10 @@ void Launcher::press_dialog(Key key)
             prefs_.reduce_motion = !prefs_.reduce_motion;
         break;
     case Modal::diagnostics:
-        prefs_.detailed_logging = !prefs_.detailed_logging;
+        if (option_ == 0)
+            prefs_.detailed_logging = !prefs_.detailed_logging;
+        else
+            prefs_.immediate_logs = !prefs_.immediate_logs;
         break;
     default:
         return;
@@ -642,10 +680,17 @@ void Launcher::draw_dialog(Canvas &c, Modal modal, float open)
             pick(services_.resolution_labels(), prefs_.resolution),
             pick(services_.filter_labels(), prefs_.filter),
             hertz(prefs_.refresh),
+            std::string{}, // FPS overlay: a switch
+            on_off(prefs_.frame_gen),
+            prefs_.frame_gen_target <= 0 ? std::string{tr("Auto")} :
+                fill(tr("{0} Hz"), {kFrameGenTargetNames[std::clamp(prefs_.frame_gen_target, 1, kFrameGenTargets - 1)]}),
+            kFrameGenMultiplierNames[std::clamp(prefs_.frame_gen_multiplier, 0, kFrameGenMultipliers - 1)],
         };
+        const bool frame_gen_locked = services_.frame_gen_state() != 2;
         static constexpr const char *kNames[kVideoRows] = {
             TR("Renderer"),         TR("Output resolution"), TR("Resolution"),
-            TR("Upscaling filter"), TR("Refresh rate"),      TR("FPS overlay")};
+            TR("Upscaling filter"), TR("Refresh rate"),      TR("FPS overlay"),
+            TR("Frame generation"), TR("Frame gen target"),  TR("Frame gen multiplier")};
         for (int row = first; row <= last; ++row)
         {
             list.push_opacity(video_rows_.row_alpha(row, kVideoRowHeight));
@@ -653,6 +698,13 @@ void Launcher::draw_dialog(Canvas &c, Modal modal, float open)
             {
                 label(row, tr(kNames[row]), kToggle);
                 toggle(c, 1292.0f, row_centre(row), knob);
+            }
+            else if (row >= video_frame_gen && frame_gen_locked)
+            {
+                // Greyed out: the user's Lossless.dll is not there.
+                list.push_opacity(0.38f);
+                label(row, tr(kNames[row]), choice(row, tr("Unavailable")));
+                list.pop_opacity();
             }
             else
             {
@@ -757,11 +809,25 @@ void Launcher::draw_dialog(Canvas &c, Modal modal, float open)
         break;
     }
     default:
+    {
         text_block(c, services_.setup_details(), 592.0f, baseline(364.0f, 40.0f, theme::kText24),
-                   theme::kText24, 40.0f, theme::kBody, 736.0f, 7);
-        label(0, tr("Detailed logging"), kToggle);
-        toggle(c, 1292.0f, row_centre(0), knob);
+                   theme::kText24, 40.0f, theme::kBody, 736.0f, 3, kShrink);
+        static constexpr const char *kNames[] = {TR("Detailed logging"), TR("Write logs at once")};
+        static constexpr const char *kAbout[] = {
+            TR("Eden's debug messages in the logs of a game."),
+            TR("Keeps the last line before a crash, but games stutter. From the next start.")};
+        for (int row = 0; row < 2; ++row)
+        {
+            label(row, tr(kNames[row]), kToggle);
+            toggle(c, 1292.0f, row_centre(row),
+                   tween::clamp01(switches_[static_cast<std::size_t>(row)].value));
+        }
+        // What the highlighted switch does.
+        text_block(c, tr(kAbout[std::clamp(option_, 0, 1)]), 592.0f,
+                   baseline(716.0f, 30.0f, theme::kSmall), theme::kSmall, 30.0f, theme::kMeta, 736.0f,
+                   2, kShrink);
         break;
+    }
     }
 
     if (scrolls)

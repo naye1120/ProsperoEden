@@ -17,15 +17,17 @@ The app package includes an exact-title one-shot helper built from the pinned up
 manifest, ELF hash, protocol hash, title and required retry feature are checked before packaging.
 At runtime a resident Lapy service gets the first bounded opportunity; otherwise ProsperoEden
 sends the packaged helper to the local ELF loader on TCP port 9021. Without that loader or a
-resident service, ProsperoEden falls back to its sandbox paths.
+resident service, ProsperoEden has no access to its data and says so; it keeps no second copy of it in its sandbox.
 
 The pinned commit includes the donor-release and firmware 13.60 corrections merged in
 [PS5-Lapy-JB-Daemon PR #48](https://github.com/mpereiraesaa/PS5-Lapy-JB-Daemon/pull/48) and
-[PR #49](https://github.com/mpereiraesaa/PS5-Lapy-JB-Daemon/pull/49).
+[PR #49](https://github.com/mpereiraesaa/PS5-Lapy-JB-Daemon/pull/49), plus the guarded
+target-lifetime and fail-closed accounting changes from
+[PR #50](https://github.com/mpereiraesaa/PS5-Lapy-JB-Daemon/pull/50).
 The previous `54a095c` pin passed five automated launch/elevate/close cycles on both firmware 6.02
-and 12.70. Each run proved root `/data` access, reaped and balanced donors, a clean helper exit, and
-no fatal signal, app crash, coredump, nonsleeping-lock warning, or kernel panic in its captured
-kernel-log window. The new `c3bdfe3` helper still requires attended qualification runs.
+and 12.70 with root `/data` access and balanced donors. The pinned `57fcc19` helper completed the
+target-exit stress and a full one-shot elevation on firmware 12.70; it still requires an attended
+ProsperoEden qualification run on firmware 6.02.
 
 The first build takes a while (RADV and Eden are large). Later builds reuse everything that
 already exists: the dependencies, this checkout's build cache in
@@ -76,7 +78,7 @@ Downloads are cached in `~/.cache/prosperoeden-deps` (`PROSPEROEDEN_DEPS_CACHE`)
 
 Inside this repository, in `.deps/`:
 
-- **Eden** at commit `5f142c7926d0c7fcbbd0ce30794d72f638a43b2a` (GitHub mirror archive), with
+- **Eden** at commit `67bada77f8a43a90da2e94e89b8e7da73c256989` (GitHub mirror archive), with
   Eden's own hash-pinned packages, which its configure step downloads. ProsperoEden does not
   modify Eden's files: the PS5 frontend in `headless/` replaces and derives sources at
   configure time (`headless/inject.cmake`).
@@ -114,8 +116,8 @@ The tools that made them are in `tools/launcher`:
 - `assets.sh` bakes the font (`third_party/fonts/Montserrat-Medium.ttf`) and renders the art from
   the source pictures in `sce_sys/`; it needs a host C++ compiler and Python with Pillow.
 - `process-sfx.py` trims and levels the raw sound effects (needs `ffmpeg` and `numpy`).
-- `bake-wordmark.py` writes the "LOADING" lettering of the loading screen
-  (`headless/loading_wordmark.glsl`).
+- `bake-loading-text.py` writes the lettering of the loading screen
+  (`headless/loading_text.glsl`).
 - `preview.sh` draws every launcher screen on a PC (Mesa's software renderer, sample games) to
   PNG files or a video, with the same code, shaders and font as on the console.
 - `strings.py` keeps the translations: `extract` writes the template (`launcher.pot`) from the
@@ -134,12 +136,13 @@ What the PS5's home screen shows for the app is in `sce_sys/`, as it goes into t
 `ccache`, `make`, `nasm`, `meson`, `rsync`, `git`, `glslangValidator`, `spirv-val`, `bison`,
 `flex`, `curl`, `wget`, `unzip`, and Python 3.11 or later with `venv`, `mako` and `yaml`.
 
+**Nix shell.** With the [Nix](https://nixos.org/download/) package manager, `shell.nix` provides all of these tools (LLVM 18 and 21, Meson, CMake, Ninja and the rest): `nix-shell shell.nix --run "make"`.
+
 RADV's host tools (`mesa_clc`, `vtn_bindgen2`) are built against the host's LLVM 21: its
 development files, Clang 21 libraries, libclc and the SPIR-V LLVM translator. The Payload SDK's
 `prospero-*` wrappers (the RADV build and the final link) use `$LLVM_CONFIG`, else the newest of
 LLVM 21 to 15 that is installed: the releases are linked with LLD 21. On Ubuntu 26.04 every
-package the release build needs is listed in `tools/ci/ubuntu-packages.txt`, the file the release
-workflow installs from:
+package the release build needs is listed in `tools/ci/ubuntu-packages.txt`:
 
 ```bash
 sudo apt install --no-install-recommends $(grep -v '^#' tools/ci/ubuntu-packages.txt)
@@ -169,9 +172,12 @@ crashes on request, to try it on a console: write `segv`, `thread`, `abort` or `
 ## Release workflow
 
 `.github/workflows/release.yml` runs `tools/ci/build-release.sh` (`make release`) on a
-GitHub-hosted runner (`ubuntu-24.04`), inside an `ubuntu:26.04` container with the packages in
-`tools/ci/ubuntu-packages.txt`: the same distribution and LLVM versions as a build on your own
-machine. It first deletes SDKs the runner image carries (.NET, Android, GHC, the tool cache) for
+GitHub-hosted runner (`ubuntu-24.04`), without a container. Ubuntu 24.04 lacks part of what the
+build needs, so `tools/ci/setup-ubuntu-24.04.sh` installs the packages in
+`tools/ci/ubuntu-24.04-packages.txt` with LLVM 21 from apt.llvm.org (the same LLVM versions as a
+build on your own machine), Meson from PyPI, and builds the SPIR-V LLVM translator for LLVM 21
+from source (kept in a cache); CMake is the runner's own. The workflow first deletes SDKs the
+runner image carries (.NET, Android, GHC, parts of the tool cache) for
 disk space, and builds with as many jobs as the runner has cores (`JOBS`, and `RADV_BUILD_JOBS`
 for RADV, whose build otherwise runs 24).
 
@@ -182,6 +188,11 @@ these caches builds everything on four cores and takes about an hour. Should a b
 the build step's limit (315 minutes), ccache is still saved, and running the workflow again
 continues from there. A pull request starts from `main`'s caches and, when it builds, saves no
 ccache of its own.
+
+GitHub drops a cache that nobody used for a week, and `main` is only built by hand, so ccache has
+a second source: `ccache-u24.tar`, a file of the `build-cache` release. A run that finds no ccache
+downloads it. To replace it, start the workflow on `main` by hand with "snapshot" ticked;
+`.github/workflows/build-cache.yml` then publishes that run's ccache.
 
 `tools/ci/build-release.sh` still accepts `EDEN_DEV_CHECKOUT` (a development checkout whose
 dependencies are reused instead of fetched) for a build on your own machine.
@@ -195,8 +206,7 @@ dependencies are reused instead of fetched) for a build on your own machine.
   the pull request's own head commit. A newer push to a pull request, or a newer manual run on
   the same branch, cancels the run in progress.
 - **Tag `vX.Y.Z`** (by itself, when the tag is pushed): builds and checks them the same way, checks that the tag matches the package
-  version, and publishes a pre-release with the ZIP and `SHA256SUMS` (a second job, outside the
-  container). The release notes come from the README's "Changes in vX.Y.Z" section.
+  version, and publishes a pre-release with the ZIP and `SHA256SUMS` (a second job). The release notes come from the README's "Changes in vX.Y.Z" section.
 - Every run also keeps `build/symbols/` as an artifact with `-symbols` after the name: 90 days
   for a tag, 7 days otherwise.
 - A tag's or a manual run's ZIP is attested (signed build provenance): a release ZIP built by

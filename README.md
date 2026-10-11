@@ -10,11 +10,15 @@
 
 **ProsperoEden is an unofficial PlayStation 5 port of [Eden](https://github.com/eden-emulator/mirror)** - an accurate, high-performance emulator. All credit for the emulator core belongs to the Eden project and its contributors. ProsperoEden is not affiliated with or endorsed by the Eden team or Sony.
 
-This is an early alpha. Video, audio, controller input, and saves have been confirmed working. Compatibility and performance will vary between games. The current release is **v1.000.090**.
+This is an early alpha. Video, audio, controller input, and saves have been confirmed working. Compatibility and performance will vary between games. The current release is **v1.000.110**.
 
 ## Source code
 
 The complete ProsperoEden source is in this repository: the PS5 frontend and launcher in `headless/`, and the build and packaging tools in `tools/`. To build it yourself, run `make` on Linux (Ubuntu 26.04; WSL works). It fetches every dependency at its pinned revision and writes the release files to `dist/`; `make help` lists the other targets. See [docs/BUILDING.md](docs/BUILDING.md). A release ZIP built by GitHub Actions can be checked with `gh attestation verify <ZIP> -R blackbearreloaded/ProsperoEden` (GitHub CLI); this covers releases built from now on (after v1.000.090), not earlier ones.
+
+Local-wireless multiplayer through Eden rooms is new in v1.000.110 and experimental. See the
+[setup guide and current limitations](docs/MULTIPLAYER.md) and the
+[validation status](docs/MULTIPLAYER_IMPLEMENTATION.md); Tailscale forwarding is not yet qualified.
 
 ## Project foundation
 
@@ -40,6 +44,7 @@ The complete ProsperoEden source is in this repository: the PS5 frontend and lau
 - **Resolution and upscaling** - render at 0.5x to 4x of the game's resolution and choose the filter that scales it to your TV (Bilinear, AMD FSR, Bicubic or Nearest) in **Settings > Video**.
 - **Output resolution** - the picture is made at 1080p, 1440p or 2160p: **Output resolution** in **Settings > Video**. The menu is drawn at that size too, and the PS5 scales it to your TV.
 - **120 Hz output** - on a display that shows 120 Hz, games can run on a 120 Hz output: **Refresh rate** in **Settings > Video**, or in one game's settings. A frame that is a little late is then shown 8 ms later instead of 17 ms, and patches for more than 60 FPS need it. The menu stays at 60 Hz.
+- **Frame generation** - between two of a game's own pictures ProsperoEden can show one made up from them, so a 30 FPS game looks like 60: **Frame generation** in **Settings > Video**, or in one game's settings. It needs your own copy of Lossless Scaling; see [Frame generation](#frame-generation).
 - **Game files anywhere** - keys, firmware, and games can live in any folder the PS5 can read: internal storage, an M.2 or external drive, or a USB device.
 - **Folder browser** - pick the game files folder in **Settings > Game files**. It shows how many keys, firmware files, and games each folder holds. Hold L1/R1 to page quickly.
 - **Library** - game covers, **Continue Playing**, and **Recently Played**, which keep working after you move your files.
@@ -125,12 +130,18 @@ ProsperoEden keeps its own data in `/data/prosperoeden`, separately from the gam
 ├── backup/save-sync/                   # save data the save sync replaced, the last three per game
 ├── covers/                             # cached game covers
 ├── logs/                               # current and previous session logs, crash reports
+├── previous-version/PPSA99008-backup/  # the version the last self-update replaced
 └── user/                               # every profile's saves, and emulator user data
+    └── lossless/Lossless.dll           # optional: your copy, for frame generation
 ```
 
 The app itself stays in `/data/homebrew/PPSA99008`; see [Updating](#updating).
 
 ProsperoEden does not include keys, firmware, games, or other copyrighted console data. Dump these files from hardware and software you own. Do not download or redistribute them.
+
+This is the only place it keeps them. If ProsperoEden cannot get access to the console's storage when it starts, the home screen says so and no game can be started; your data is untouched, and closing ProsperoEden and opening it again is the first thing to try. Earlier versions kept a second set of settings and saves in the app's own sandbox in that case, which made saves and settings seem to disappear on consoles where access came and went.
+
+Keys, firmware and games that an early version kept inside the app's folder (`/data/homebrew/PPSA99008/assets`) are moved to `/data/prosperoeden` the first time this version starts, so that replacing the app cannot remove them.
 
 ### Updating
 
@@ -138,13 +149,23 @@ Close ProsperoEden first. Your settings, saves, covers and logs are in `/data/pr
 
 Once each time it opens, ProsperoEden asks [homebrew.page](https://homebrew.page/ps5) which release of it is listed there. The request carries the app's title ID and nothing else. If the listed release is newer than the one running, a dialog offers it, with its version and download size:
 
-- **Update now** downloads the release ZIP from its GitHub release, checks it against the SHA-256 in the catalog's signed list, and unpacks it beside the app. A ring shows how far it is and the time left; Circle cancels, and nothing has changed until the end. Then ProsperoEden closes, the update helper (`self-updater.elf`, sent to the console's payload loader on port 9021) replaces the app's files, and the console shows a notification. Open ProsperoEden again to use the new version.
+- **Update now** downloads the release ZIP from its GitHub release, checks it against the SHA-256 in the catalog's signed list, and unpacks it beside the app. A ring shows how far it is and the time left; Circle cancels, and nothing has changed until the end. Then ProsperoEden closes, the update helper (`self-updater.elf`, sent to the console's payload loader on port 9021) replaces the app's files, and the console shows a notification. Open ProsperoEden again to use the new version. The version it replaced is kept; see [Going back to the previous version](#going-back-to-the-previous-version).
 - **What's new** (when the release has notes) shows what changes in it before you decide: the release notes as homebrew.page lists them. Up/Down scroll, L1/R1 jump a page, Cross updates and Circle goes back to the offer. Triangle opens them from the offer too.
 - **Skip** keeps the version you have. The dialog shows again the next time ProsperoEden opens, not when you come back from a game.
 
 If the download or the unpacking fails, the dialog says why and offers **Try again**; the app stays as it was. Without a network, or without an answer, nothing is shown. When ProsperoEden cannot install the release itself (no payload loader, or an install it cannot find), the menu says **Update available** at the top right for ten seconds instead, and the steps below still work:
 
 - **Folder install.** Copy the `PPSA99008` folder from the new release ZIP over `/data/homebrew/PPSA99008`, replacing the files it has, then start ProsperoEden. Files you put there yourself, such as `language.txt`, stay.
+
+### Going back to the previous version
+
+When ProsperoEden updates itself, the files of the version it replaces are kept in `/data/prosperoeden/previous-version/PPSA99008-backup`, until the next update replaces them in turn. If a new version misbehaves, you can put the previous one back:
+
+1. Close ProsperoEden.
+2. Copy everything inside `/data/prosperoeden/previous-version/PPSA99008-backup` over the app's folder (`/data/homebrew/PPSA99008`), replacing the files it has, for example over FTP.
+3. Start ProsperoEden. The About screen shows the version that is running.
+
+The update will be offered again the next time ProsperoEden opens; choose **Skip** to stay on the version you put back. Settings, saves and game files are not part of this: they stay as they are. An update done by hand, by copying a release over the app's folder, keeps no previous version.
 
 ### Moving save data
 
@@ -269,6 +290,26 @@ The accuracy switches help only where a game is held back by what they relax. In
 
 Resolution, the upscaling filter, the renderer and the refresh rate, which change speed too, are in **Settings > Video** and in a game's own settings.
 
+### Frame generation
+
+Frame generation shows, between two pictures a game draws, one that is made up from them. A game that runs at 30 FPS then looks like 60. It does not make the game itself faster, it adds a little delay between a button and its effect, and fast motion can show faults in the made-up pictures. It works with the Vulkan renderer.
+
+It uses the frame generation of [Lossless Scaling](https://store.steampowered.com/app/993090/Lossless_Scaling/), which ProsperoEden cannot include: you need your own copy of that program.
+
+1. On the PC where Lossless Scaling is installed, find `Lossless.dll` in its folder (with Steam: `steamapps/common/Lossless Scaling`).
+2. Copy it to the console as `/data/prosperoeden/user/lossless/Lossless.dll`.
+3. Set **Frame generation** to on in **Settings > Video**, or for one game: Triangle on the game in the Library, then **Video**. It applies the next time the game starts.
+
+Without the file, the three settings are greyed out and say **Unavailable**.
+
+| Setting | What it does |
+|---|---|
+| Frame generation | On or off |
+| Frame gen target | The rate to reach: as many pictures are added as it takes. **60 Hz** suits a 30 FPS game on the usual output; more than 60 needs **Refresh rate** at 120 Hz and a display that shows it. **Auto** leaves it to the multiplier |
+| Frame gen multiplier | With the target on Auto: 2x, 3x or 4x the game's own pictures |
+
+A game that already fills the output, such as one at 60 FPS on the 60 Hz output, gains nothing from it. When it does not run, the log of the session says why, in the lines that start with `framegen:`.
+
 ### Profiles
 
 **Settings > Profiles** lists the people who play on this console, up to eight. Each profile keeps its own save data, its own settings (everything under Settings, and each game's own settings) and its own Continue Playing and Recently Played. The game files folder is the console's and is the same for everyone.
@@ -288,7 +329,7 @@ The menu opens with the profile that the PS5 user in front chose last. If you us
 
 | Kind | What a game can have of its own |
 |---|---|
-| Video | Renderer, resolution, upscaling filter, refresh rate, FPS overlay |
+| Video | Renderer, resolution, upscaling filter, refresh rate, FPS overlay, frame generation with its target and multiplier |
 | Performance | Each of the seven switches |
 | Audio | Game volume, mute |
 | Controls | Vibration, and a button mapping of its own |
@@ -313,6 +354,38 @@ The launcher follows the language the PS5 is set to: Arabic, Chinese (simplified
 ### Upgrading from an earlier alpha
 
 Earlier versions read everything from `/data/homebrew/PPSA99008/assets/`. That folder keeps working until you choose a game files folder, and settings are migrated automatically on first launch. To move to the new layout, move `assets/keys`, `assets/firmware` and `assets/roms` into any folder, then select it in **Settings > Game files**. The release ZIP contains no user files, so copy its app files over your installation without deleting your own data.
+
+## Changes in v1.000.110
+
+- **Multiplayer through Eden rooms (new, experimental).** ProsperoEden can join an Eden room, so a game's Local Wireless mode reaches other players over the internet: other PS5 consoles running ProsperoEden, and Eden on a PC. Open **Settings > Multiplayer**, join a room, then start the game and choose its Local Wireless mode. The home screen shows when a room is connected, the game overlay shows the delay to the room in milliseconds, and when the connection is lost the game closes and the launcher says why. See the [setup guide](https://github.com/blackbearreloaded/ProsperoEden/blob/main/docs/MULTIPLAYER.md).
+- **Private room.** Enter a room's address, UDP port, a nickname and its password. They are saved as you type them, and joining a public room does not replace them. Enter the room's IPv4 address: looking up a hostname does not work on the console yet.
+- **Public rooms.** A list of the rooms in Eden's public directory, with each room's game, how many players it has and whether it asks for a password. Rooms you can join come first, the busiest at the top; Left and Right move a page at a time and Triangle refreshes. Rooms that use another protocol version are marked and cannot be joined.
+- **For a stable multiplayer session**, everyone needs the same game and the same update of it, and the player who hosts the lobby should use 1x resolution with frame generation off. A host that cannot hold full speed ends the session for everyone.
+- **Connection problems are explained.** When a room cannot be joined, a panel says what happened and what to try: a wrong password, a full room, a room that did not answer, a name already in use. **Settings > Diagnostics** has the detailed log to send with a report.
+- **Self-update keeps the version it replaces.** After an update, the previous version's files stay in `/data/prosperoeden/previous-version/PPSA99008-backup` until the next update. See [Going back to the previous version](#going-back-to-the-previous-version).
+- **One place for your data.** Settings, saves and covers are only ever in `/data/prosperoeden`. When ProsperoEden could not get access to the console's storage at a start, it used to carry on with empty settings and no saves, which looked as if they had been lost; it now says so on the home screen and starts no game. Keys, firmware and games that an early version kept inside the app's folder are moved to `/data/prosperoeden` at the first start, so that replacing the app cannot remove them.
+- **120 Hz holds on a display with a variable refresh rate.** With **Refresh rate** at 120 Hz, such a display was read as not having switched and the output went back to 60 Hz.
+- **No more lost graphics device in shader-heavy scenes.** Long scenes could stop a game with `VK_ERROR_DEVICE_LOST`; draws are now handed to the GPU in smaller batches. Contributed by [Bauls Deep](https://github.com/bawsdeep).
+- **Eden updated** to its revision of 8 October (`67bada77`), together with the Vulkan driver (Mesa), its tools and the Payload SDK.
+- **The helper that gives ProsperoEden access to storage** no longer reads a title's kernel data after that title has exited during its start.
+
+## Changes in v1.000.100
+
+- **Frame generation (new).** Between two pictures a game draws, ProsperoEden can show one made up from them, so a 30 FPS game looks like 60. It is in **Settings > Video** and in each game's own settings, works with the Vulkan renderer, and needs your own copy of Lossless Scaling: without its `Lossless.dll` the settings are greyed out. See [Frame generation](#frame-generation). Contributed by [gyn7561](https://github.com/gyn7561).
+- **A new loading screen.** It lists the steps of a game's start (reading the game, starting graphics, building shaders, starting the game) with a progress bar; while shaders are built it counts them. A step that lasts gets its seconds shown, so a start that is stuck can be told from one that is slow.
+- **Cheats in a file of their own work.** A cheat file placed straight in a game's mods folder (`cheat_<name>.txt`) was listed and switched on, but changed nothing in the game. It does now. The session log also names the game's build ID, the name a cheat file for that version of the game has.
+- **A game no longer fails every start after a crash.** A crash, or a console that went down, could leave a game's shader cache file damaged; that game then crashed at every start on the same renderer. The damaged part is now cut off and the rest is kept.
+- **No more stutter from log writes.** Games dropped frames every few seconds while the logs were written. Logs are now written in the background once a second; **Settings > Diagnostics > Write logs at once** brings the old behaviour back, to find a crash. Contributed by [matschi95](https://github.com/matschi95).
+- **The FPS overlay with frame generation.** It shows the game's own rate (N) beside the rate on screen (F) while frames are being added, and its usual single figure otherwise. Contributed by [gyn7561](https://github.com/gyn7561).
+- **The log says why frame generation is not running**, in lines that start with `framegen:`. Contributed by [gyn7561](https://github.com/gyn7561).
+- **A Nix shell for building.** `shell.nix` sets up the whole build environment. Contributed by [Bauls Deep](https://github.com/bawsdeep).
+- **Issues are open on GitHub**, with forms for bug reports and game reports; they ask for the save data and the debug logs. See [Issues and reports](#issues-and-reports).
+
+## Changes in v1.000.095
+
+A bug fix for v1.000.090. If you are on v1.000.090, update.
+
+- **Stutter and crashes while playing are fixed.** In v1.000.090 every button press could make a game bring up its controller screen again: play stuttered, and some games crashed after a minute or two. A second, handheld controller was being connected beside the player's own at the first press. It is now only used when **Handheld** is the game's Controller type, or the only controller the game takes.
 
 ## Changes in v1.000.090
 
@@ -431,7 +504,6 @@ The touchpad is pressed as a button. On its own, a tap of the touchpad presses t
 
 - **FPKG support** - install ProsperoEden as a fake package, alongside the current homebrew folder install.
 - **More performance** - CPU and GPU work to keep demanding games at their target frame rate: the short stutter when a game reaches new areas (the block list, **Compile ahead** in **Settings > Performance**, once it has run in more games and can be on by default), heavy cutscenes, and games that run slower in Docked mode than in Handheld.
-- **Frame generation (investigation)** - show a picture made up between two of the game's own, so that a game running at 30 FPS looks like 60, or 60 like 120 on a display that takes it. Emulators mostly leave this to tools outside them (a frame-generation program over the window, or the graphics driver's own); neither exists on the PS5, so it would be ours: the motion between two finished pictures estimated on the GPU, as driver-level frame generation on PCs does, without motion data from the game. To find out: what it costs in GPU time, how much later the controls feel (the newest picture has to wait for the one made before it), and how menus and text hold up. It makes motion smoother; it does not make a game run faster.
 - **More reliable game loading** - a game that hangs while it loads can now be left with Touchpad + L1; the hangs themselves still need a log from a game that does it.
 - **Game names in the menu's language** - a game carries a name for each language; the Library shows the first one that is text. Show the one in the menu's language, and the name from an installed update when it has one.
 - **Real Joy-Cons and Pro Controllers (investigation)** - play with the original controllers connected to the PS5. The PS5 does not pair them itself, so this first needs to find out whether a homebrew app can read them: a wired Pro Controller over USB looks more likely than Joy-Cons, which only connect over Bluetooth.
@@ -442,11 +514,19 @@ The touchpad is pressed as a button. On its own, a tap of the touchpad presses t
 - **Better OpenGL performance** - make the OpenGL renderer faster, and add tuning options for it.
 - **More game compatibility** - validate more games on the PS5, and fix what keeps them from running well, such as games that crash at launch.
 
-## Issues are disabled
+## Issues and reports
 
-GitHub issues are turned off for this repository on purpose. ProsperoEden is a general-purpose emulator port, and the project does not host discussion of console makers, specific commercial games, compatibility reports, or where to find game files. Issue threads tend to fill up with exactly that, so there are none.
+Problems and ideas go to [GitHub issues](https://github.com/blackbearreloaded/ProsperoEden/issues). Reports about a particular game are welcome: name the game, and say what happens and where.
 
-Please do not use pull requests or other channels to post that kind of content either.
+A report that can be acted on has:
+
+- the game and its version (and any update or mod in use);
+- the ProsperoEden version, the PS5 model and system software version, and what the console runs (kstuff-lite or etaHEN, ShadowMountPlus version);
+- the renderer, resolution and Performance switches;
+- the debug logs, attached as a ZIP: turn on **Settings > Diagnostics > Detailed logging**, make the problem happen again, then zip `/data/prosperoeden/logs` (after a crash, the crash report and the logs beside it);
+- for a problem at a certain spot in a game, your save data from just before it, attached as a ZIP: Triangle on the game in the Library, **Save data**, **Export a copy**, then zip the folder it writes in `/data/prosperoeden/save-export`. With it the spot can be reached without playing the game up to there.
+
+**No piracy.** ProsperoEden is for games you own and dumped yourself. Do not ask for, post or link to game files, keys or firmware, here or in any of the project's channels, and do not ask where to find them. Such posts are removed.
 
 ## Elevation credits
 
@@ -459,10 +539,12 @@ verifies the upstream-generated manifest, and includes the resulting ELF in the 
 The donor-release and firmware 13.60 fixes pinned here were merged upstream in
 [PS5-Lapy-JB-Daemon PR #48](https://github.com/mpereiraesaa/PS5-Lapy-JB-Daemon/pull/48) and
 [PR #49](https://github.com/mpereiraesaa/PS5-Lapy-JB-Daemon/pull/49).
-The previous `54a095c` helper passed five automated launch/elevate/close cycles on firmware 6.02
-and five on 12.70 with root access, balanced donor references, clean helper exits, and no fatal
-signal, app crash, coredump, nonsleeping-lock warning, or kernel panic in the captured kernel-log
-windows. The new `c3bdfe3` helper still requires attended qualification runs.
+The pinned `57fcc19` helper also includes the guarded target-lifetime and fail-closed accounting
+changes from [PR #50](https://github.com/mpereiraesaa/PS5-Lapy-JB-Daemon/pull/50). The previous
+`54a095c` helper passed five automated launch/elevate/close cycles on firmware 6.02 and five on
+12.70 with root access and balanced donor references. The pinned helper completed the target-exit
+stress and a full one-shot elevation on firmware 12.70; it still requires an attended
+ProsperoEden qualification run on firmware 6.02.
 
 ## Thanks
 
@@ -473,6 +555,19 @@ Thank you to the people who test ProsperoEden on their own consoles and report w
 - **szampan** ([GitHub](https://github.com/heni0xyz)), for helping with testing.
 - **BunkinBacon**, for helping with testing.
 - **Cold** ([GitHub](https://github.com/JMUtechnologies)), for helping with testing.
+- **Bauls Deep** ([GitHub](https://github.com/bawsdeep)), for helping with testing.
+- **OverkillLabs**, for helping with testing.
+
+And to the people who contribute code:
+
+- **Mihawk** ([GitHub](https://github.com/mihawk-99)), besides the driver the Vulkan renderer runs on: cheats that can be chosen one by one, the fix for the crash when a game with cheats stops, the driver's shader cache working on the console, a fix for games that come without control data, and the driver build reading its versions from one place.
+- **quatrixone** ([GitHub](https://github.com/quatrixone)), for the Performance settings and their seven switches, also per game, and for a much faster first compilation of a game's code.
+- **Martin Pham** ([GitHub](https://github.com/MartinPham)), for starting a game straight from its path, which is what forwarders on the home screen use.
+- **matschi95** ([GitHub](https://github.com/matschi95)), for the RomM integration (browsing, downloading and playing games from your own server, and save sync) and for finding and fixing the stutter that log writes caused every few seconds.
+- **v0ltfault** ([GitHub](https://github.com/v0ltfault)), for tracking down why every game ended at its first picture on system software 7.40, with a fix and a write-up of the findings.
+- **gyn7561** ([GitHub](https://github.com/gyn7561)), for bringing frame generation to the PS5, with its settings, and for the log lines that say why it is or is not running.
+- **Bauls Deep** ([GitHub](https://github.com/bawsdeep)), for the Nix shell that sets up the whole build environment with one command.
+- **lunar-me** ([GitHub](https://github.com/lunar-me)), for a correction to the README.
 
 <!-- bbr-footer:start -->
 <!-- Generated by ps5-homebrew-dev-protocol/scripts/readme-footer. Edit the template there, not here. -->
