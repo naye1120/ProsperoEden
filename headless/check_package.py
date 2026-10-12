@@ -28,7 +28,7 @@ if (APP / 'force-language.txt').is_file():
 RECEIPT = ROOT / 'HEADLESS_CANDIDATE.json'
 # The pinned OpenGL SDK release (tools/deps.json): digest of its manifest.sha256.
 GL_SDK_MANIFEST_SHA256 = 'f4b91f672be037fbac3f82494f1225deaf4c227a03f37ac3ffa56abb213b943f'
-LAPY_PROTOCOL_SHA256 = 'bb02c4aa814eaba7a7a423a31b29ff41f786212c2953678cf29434e85fa0f869'
+LAPY_PROTOCOL_SHA256 = '044c50194116073c3a9ddce842890c6195febb77ef94a631f69109f0faf1ee1e'
 
 
 def digest(path):
