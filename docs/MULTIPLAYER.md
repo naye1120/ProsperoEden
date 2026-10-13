@@ -21,7 +21,7 @@ Use a private room server on a PC/Linux host for initial tests. The PS5 build is
 client; it does not host a room or browse public rooms. Obtain the host address, UDP port
 and optional room password from the room operator. The usual UDP port is **24872**.
 
-1. In ProsperoEden, open **Settings > Multiplayer** before launching a game.
+1. In ProsperoEden, open **Multiplayer** (a section of the menu: R1 twice from the home screen) before launching a game.
 2. Select **Room address** and enter a numeric IPv4 address or hostname. Enter the port
    separately. IPv6 literals are not supported by this connection form.
    The current PS5 candidate failed hostname resolution in the public-cloud test; use
@@ -43,8 +43,8 @@ While connected, Cross chooses **Leave room**. Square chooses **Go offline**, in
 after a failed join. Circle returns to the previous launcher screen without leaving a
 connected room. During a game, use the existing Touchpad + L1 shortcut to return to the
 launcher before changing rooms. If the room connection fails during play, the implementation
-requests the normal return-to-menu path. This recovery passed on `.30` from a Mario Kart
-8 Deluxe 3.0.5 wireless lobby; recovery during an active race remains unqualified.
+requests the normal return-to-menu path. This recovery passed on `.30` from a game's
+wireless lobby; recovery during an active race remains unqualified.
 
 The game overlay adds **P42** for a room-server round-trip time of 42 milliseconds while
 connected (display capped at 9999). It uses ENet's existing measurement, with no extra ping
@@ -77,7 +77,7 @@ Substitute the server's reachable LAN or tailnet IPv4 address for `ROOM_HOST_IP`
 ```sh
 eden-room --room-name "Friends" --bind-address ROOM_HOST_IP \
   --port 24872 --max-members 8 --password "choose-a-room-password" \
-  --preferred-game "Mario Kart 8 Deluxe" \
+  --preferred-game "<the game's name>" \
   --preferred-game-id 0x0100152000022000 \
   --ban-list-file ./room-bans.txt --log-file ./room.log
 ```

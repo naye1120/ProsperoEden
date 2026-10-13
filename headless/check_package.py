@@ -21,17 +21,21 @@ BASE_REQUIRED = {'eboot.bin', 'core-homebrew.nro', 'sce_module/libc.prx',
             'licenses/NotoSansSC-OFL.txt', 'self-updater.elf'}
 REQUIRED = set(BASE_REQUIRED)
 REQUIRED.update(p.relative_to(APP).as_posix() for p in (APP / 'ui').rglob('*') if p.is_file())
-# force-language.txt ships only when present at the repo root (an optional
-# manual-testing marker; the launcher itself no longer reads it).
-if (APP / 'force-language.txt').is_file():
-    REQUIRED.add('force-language.txt')
+# language.txt in the app's folder (see frontend.cpp LoadLanguage) chooses a
+# language tag (for example "zh-Hans"); it ships only when present, as a marker
+# that forces the launcher's language regardless of the console's setting.
+if (APP / 'language.txt').is_file():
+    REQUIRED.add('language.txt')
 # The runner's switches (headless/main.cpp): only a development package carries them, so they
 # are required exactly when the build put them there (tools/package-headless-native.sh).
 if (APP / 'dev-settings.txt').is_file():
     REQUIRED.add('dev-settings.txt')
 RECEIPT = ROOT / 'HEADLESS_CANDIDATE.json'
 # The pinned OpenGL SDK release (tools/deps.json): digest of its manifest.sha256.
-GL_SDK_MANIFEST_SHA256 = 'f4b91f672be037fbac3f82494f1225deaf4c227a03f37ac3ffa56abb213b943f'
+GL_SDK_MANIFEST_SHA256 = '0d432edc9d648d6e0cccb4d5eb3db8484f10ba4b075b5ccf23edda3251b66360'
+# Pinned Lapy helper (57fcc19): its protocol digest is 044c5019, not the stale
+# bb02c4aa the upstream check_package.py still carries (upstream dfda802 updated
+# the pin but not this constant). Verified against the Lapy repo's own manifest.
 LAPY_PROTOCOL_SHA256 = '044c50194116073c3a9ddce842890c6195febb77ef94a631f69109f0faf1ee1e'
 
 
@@ -107,7 +111,7 @@ if __name__ == '__main__':
             if not p.startswith('../') or (ROOT / p).exists()]  # console tooling of a development layout
         frontend = json.loads((OUT / 'frontend.json').read_text())
         if frontend['renderer'] == 'opengl-4.6-compatibility':
-            sdk = ROOT / '.deps/ps5-opengl-sdk-1.0.0/sdk'
+            sdk = ROOT / '.deps/ps5-opengl-sdk-1.0.2/sdk'
             manifest = sdk / 'manifest.sha256'
             assert digest(manifest) == GL_SDK_MANIFEST_SHA256
             paths.append(manifest)
