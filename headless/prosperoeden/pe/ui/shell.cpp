@@ -127,6 +127,8 @@ float Launcher::arrive(int index, float step) const
 
 void Launcher::focus_rail()
 {
+    if (th().top_nav)
+        return;
     rail_focus_ = true;
     rail_index_ = section();
     message_.clear();
@@ -181,26 +183,79 @@ void Launcher::draw_scrims(Canvas &c)
     gfx::DrawList &list = c.list;
     const Color shade = th().base;
     const float away = tween::clamp01(dim_.value);
-    const float home = 1.0f - away;
-    if (home > 0.01f)
+    // A picture of the user's own stays visible through a lighter shade; the theme's own art keeps
+    // the full one it was drawn for.
+    const bool picture = textures_.custom_backdrop();
+    const float away_left = picture ? 0.70f : 0.92f;
+    const float away_right = picture ? 0.50f : 0.76f;
+    // One scrim whose two ends are the home look and the away look, moved by `away`. The home
+    // shade used to be stacked over the away one while a section change slid, and their alphas
+    // compounded: the middle showed the artwork brighter at both ends than either side settles
+    // to, which read as a flash. Drawn once, the middle can only lie between the ends.
+    if (th().scrim_opacity > 0.0f)
     {
-        list.hgradient_rect({0.0f, 0.0f, 653.0f, 1080.0f}, 0.0f, shade.with_alpha(0.94f * home),
-                            shade.with_alpha(0.78f * home));
-        list.hgradient_rect({653.0f, 0.0f, 538.0f, 1080.0f}, 0.0f, shade.with_alpha(0.78f * home),
-                            shade.with_alpha(0.16f * home));
-        list.hgradient_rect({1191.0f, 0.0f, 729.0f, 1080.0f}, 0.0f, shade.with_alpha(0.16f * home),
-                            shade.with_alpha(0.30f * home));
-        list.gradient_rect({0.0f, 640.0f, 1920.0f, 440.0f}, 0.0f, shade.with_alpha(0.0f),
-                           shade.with_alpha(0.90f * home));
+        const float flat = th().scrim_opacity;
+        const float home = picture ? std::min(flat, 0.58f) : flat;
+        list.hgradient_rect(kScreen, 0.0f,
+                            shade.with_alpha(home + (away_left - home) * away),
+                            shade.with_alpha(home + (away_right - home) * away));
     }
-    if (away > 0.01f)
-        list.hgradient_rect(kScreen, 0.0f, shade.with_alpha(0.92f * away), shade.with_alpha(0.76f * away));
+    else
+    {
+        // The gradient's stops at the rail and past the middle, each eased toward what the away
+        // shade has at that place, so the whole shape glides between the two looks.
+        constexpr float kHome[] = {0.94f, 0.78f, 0.16f, 0.30f};
+        constexpr float kX[] = {0.0f, 653.0f, 1191.0f, 1920.0f};
+        float stop[4];
+        for (int i = 0; i < 4; ++i)
+        {
+            const float end = away_left + (away_right - away_left) * (kX[i] / 1920.0f);
+            stop[i] = kHome[i] + (end - kHome[i]) * away;
+        }
+        list.hgradient_rect({0.0f, 0.0f, 653.0f, 1080.0f}, 0.0f, shade.with_alpha(stop[0]),
+                            shade.with_alpha(stop[1]));
+        list.hgradient_rect({653.0f, 0.0f, 538.0f, 1080.0f}, 0.0f, shade.with_alpha(stop[1]),
+                            shade.with_alpha(stop[2]));
+        list.hgradient_rect({1191.0f, 0.0f, 729.0f, 1080.0f}, 0.0f, shade.with_alpha(stop[2]),
+                            shade.with_alpha(stop[3]));
+        const float bottom = 0.90f * (1.0f - away);
+        if (bottom > 0.004f)
+            list.gradient_rect({0.0f, 640.0f, 1920.0f, 440.0f}, 0.0f, shade.with_alpha(0.0f),
+                               shade.with_alpha(bottom));
+    }
 }
 
 void Launcher::draw_rail(Canvas &c)
 {
     gfx::DrawList &list = c.list;
     const Theme &t = th();
+
+    if (t.top_nav)
+    {
+        // Horizontal tabs: Home, Multiplayer, Settings, About (Library is on the home screen).
+        constexpr float kTabY = 44.0f;
+        constexpr float kTabHeight = 44.0f;
+        constexpr float kTabGap = 8.0f;
+        constexpr int kTabs[] = {0, 2, 3, 4};
+        float x = layout::kLeft;
+        for (int tab_index : kTabs)
+        {
+            const std::size_t index = static_cast<std::size_t>(tab_index);
+            const float active = tween::clamp01(rail_active_[index].value);
+            const char *name = tr(kSectionList[tab_index].name);
+            const float width = text_width(c, name, t.size_small, 2.0f) + 32.0f;
+            const Rect tab{x, kTabY, width, kTabHeight};
+            const Color ink = gfx::mix(t.muted, t.title, active);
+            text(c, name, tab.x + tab.w * 0.5f, baseline(tab.y, kTabHeight, t.size_small),
+                 t.size_small, ink, Align::center, 2.0f);
+            if (active > 0.01f)
+                list.rounded_rect({tab.x + 4.0f, tab.y + kTabHeight - 3.0f, tab.w - 8.0f, 3.0f},
+                                  1.5f, t.accent.with_alpha(active));
+            x += width + kTabGap;
+        }
+        return;
+    }
+
     const float open = tween::clamp01(rail_open_.value);
     const float width = layout::kRail + (kRailWide - layout::kRail) * open;
 
@@ -238,7 +293,6 @@ void Launcher::draw_rail(Canvas &c)
         const Rect tile{kTileLeft, tile_top(i), kTile + (width - layout::kRail), kTile};
         const float dip = 1.0f - 0.04f * press_ * focus * motion();
         list.push_transform(dip, tile.x + kTile * 0.5f, tile.y + kTile * 0.5f, 0.0f, 0.0f);
-        // The section shown keeps a quiet plate of the accent; the highlight is the ring.
         if (active > 0.01f && !look().high_contrast)
             list.bordered_rect(tile, 20.0f, t.accent.with_alpha(0.16f * active), 1.0f,
                                t.accent.with_alpha(0.55f * active));
@@ -298,6 +352,8 @@ void Launcher::draw_clock(Canvas &c)
 
 void Launcher::draw_frame(Canvas &c, const char *title, const char *copy)
 {
+    if (th().top_nav)
+        return;
     const Theme &t = th();
     const float line = baseline(layout::kTop, 64.0f, t.size_display);
     const float clock = text_width(c, clock_, t.size_heading) + 48.0f;
@@ -322,8 +378,31 @@ void Launcher::draw_footer(Canvas &c, const Hint *hints, int count, std::string_
                        message_warning_ ? t.warning : t.accent_pale, 900.0f, message_warning_, Align::right);
     else if (!status.empty())
         taken = text_shrink(c, status, layout::kRight, line, t.size_small, t.muted, 700.0f, Align::right);
-    draw_hints(c, hints, count, layout::kLeft, layout::kFooter, t.copy,
-               layout::kWidth - (taken > 0.0f ? taken + 48.0f : 0.0f));
+    draw_menu_hints(c, hints, count, layout::kLeft, layout::kFooter, t.copy,
+                    layout::kWidth - (taken > 0.0f ? taken + 48.0f : 0.0f));
+}
+
+Pad Launcher::translate_hint(Pad glyph) const
+{
+    // The four face buttons stand for the four remappable actions; nothing else moves.
+    static constexpr Pad kFace[kMenuActions] = {Pad::cross, Pad::circle, Pad::square, Pad::triangle};
+    for (int action = 0; action < kMenuActions; ++action)
+        if (glyph == kFace[action])
+            return kFace[prefs_.menu_bind[static_cast<std::size_t>(action)]];
+    return glyph;
+}
+
+float Launcher::draw_menu_hints(Canvas &c, const Hint *hints, int count, float x, float cy, Color color,
+                               float max_width)
+{
+    std::vector<Hint> translated(static_cast<std::size_t>(count));
+    for (int i = 0; i < count; ++i)
+    {
+        translated[static_cast<std::size_t>(i)] = hints[i];
+        translated[static_cast<std::size_t>(i)].button = translate_hint(hints[i].button);
+        translated[static_cast<std::size_t>(i)].second = translate_hint(hints[i].second);
+    }
+    return draw_hints(c, translated.data(), count, x, cy, color, max_width);
 }
 
 const char *Launcher::output_name(int output)

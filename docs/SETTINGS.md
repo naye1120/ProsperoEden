@@ -15,13 +15,15 @@ The settings that take more than a line to explain: the Performance switches, fr
 | Faster DMA | `unsafe_dma` | off | Less exact memory transfers to the GPU. A few games show wrong graphics. |
 | Reactive flushing | `reactive_flushing` | on | Keeps what a game reads back from the GPU exact. Off is faster; some effects break. |
 | Skip CPU invalidation | `skip_invalidation` | off | Skips some checks when a game changes memory the GPU uses. Textures can be stale. |
+| Compact memory | `compact_memory` | off | Gives back memory a game wrote but left mostly empty, 16 KiB at a time instead of 2 MiB (see [Memory](#memory)). More free memory; a game that writes there again waits about 0.3 ms for it, so a game that keeps rewriting such memory can stutter. Measured: 100 to 300 MiB more free in two games, at the same frame rate. |
 
 A game can have its own values: in its settings, **Performance** (see [Settings per game](#settings-per-game)). In the settings file, `"performance"` at the top level is what the switches set, and one inside a game's entry under `"games"` is that game's, whose values go first:
 
 ```json
 {
   "performance": { "block_list": false, "async_shaders": false, "fast_gpu": false, "unsafe_cpu": false,
-                   "unsafe_dma": false, "reactive_flushing": true, "skip_invalidation": false },
+                   "unsafe_dma": false, "reactive_flushing": true, "skip_invalidation": false,
+                   "compact_memory": false },
   "games": { "0100000000010000": { "performance": { "fast_gpu": true } } }
 }
 ```
@@ -29,6 +31,68 @@ A game can have its own values: in its settings, **Performance** (see [Settings 
 The accuracy switches help only where a game is held back by what they relax. In the scene they were measured in on the console, a large game standing at its frame rate limit, switching all of them on changed neither the frame rate nor how busy the emulated processor and the graphics thread were. Leave them off unless a game runs under its frame rate, and switch them back off if its graphics go wrong.
 
 Resolution, the upscaling filter, the renderer and the refresh rate, which change speed too, are in **Settings > Video** and in a game's own settings.
+
+### Console memory
+
+A game's console has 4 GiB of memory, and its kernel divides them between the game, the applets and the system. **Settings > Performance > Memory** gives games the larger memory the console's developer units have: how much the game and everything running in it is told there is. Left and right move over the three; it applies when a game starts, so leave the game and start it again.
+
+| In the menu | In the file | The game is told | |
+|---|---|---|---|
+| 4 GiB | `4Gb` (the default) | 4 GiB | The memory a game's console has. Everything works with it. |
+| 6 GiB | `6Gb` | 6 GiB | |
+| 8 GiB | `8Gb` | 8 GiB | |
+
+A mod that keeps memory of its own asks the kernel how much there is and takes what it wants from the answer. A mod that wants more than 4 GiB then finds less than it asked for, and the game stops before its first picture; that mod's game needs 6 or 8 GiB, as [Mods](MODS.md) describes.
+
+```json
+{
+  "performance": { "memory_layout": "6Gb" },
+  "games": { "0100000000010000": { "performance": { "memory_layout": "8Gb" } } }
+}
+```
+
+The menu is `"performance" / "memory_layout"` in the settings file, so the two are the same thing and either can be changed with the other. A game can still be given one of its own in the file, inside its entry under `"games"`, which comes first: the menu's value is for every game. Above 4 GiB the guest's memory is backed where the game's kernel uses it, so a 6 GiB layout holds only what a session touches; the memory pool the processor shares with the graphics still has to take that much, so a demanding game at a high resolution can go from running out of graphics memory to running out of the pool. Give the larger memory to the game that needs it rather than to every game. A line at launch says which one a game got (`Memory layout:` in `stderr.log`).
+
+## Memory
+
+A game's console has 4 GiB of memory (or the larger layout chosen under **Memory**), and a game is
+handed most of it. ProsperoEden takes the console's memory for it only where the game writes: a part
+that was never written, or that the game's console cleared or freed whole, reads as zeroes from one
+shared block and takes nothing, and a part that holds only zeroes again is given back now and then.
+A 64-bit game holds 600 MiB to 2 GiB less of the console's memory this way, measured at the same
+frame rate; a 32-bit game keeps the whole block. **Compact memory** does the same in 16 KiB pieces
+inside memory the game wrote.
+
+The launch log says it (`EDEN_CRAM on` in `stderr.log`, and every 30 s what is held), and
+development builds can switch it off with `cram=off` in `dev-settings.txt`.
+
+## Post-processing
+
+**Settings > Video > Post-processing** draws a look over the game's picture: one of Eden's presets of ReShade FX effects, or off (the default). Each game can have its own in **Library > Game settings > Video**, as the other video settings.
+
+Six presets come with the app:
+
+| Preset | What it does |
+|---|---|
+| Anime | Cleans the picture, then flat bands of light with inked edges and a small glow |
+| Cinematic | Soft glow on highlights, a filmic contrast curve, cool shadows and warm highlights, fine grain, a gentle vignette |
+| Clean | Removes dithering and compression noise, smooths banded skies, brings edge detail back; a safe start |
+| Dreamy | Soft focus: the centre stays sharp while the rest blurs, with a wide glow over highlights |
+| Retro | An old television: colour fringing at the edges, curved scanlines with a phosphor mask, darker corners |
+| Vivid | Warmer, more saturated colour, deeper blacks and brighter whites, a light sharpen |
+
+The presets are files in `/data/prosperoeden/user/post_presets` (`.fxp`; the app writes the six there the first time), built from the effects in `/data/prosperoeden/user/post_shaders` (`.fx`).
+
+| Folder | What goes in it |
+|---|---|
+| `/data/prosperoeden/user/post_presets/` | Presets (`.fxp`): a name, a description and the chain of effects |
+| `/data/prosperoeden/user/post_shaders/` | ReShade FX effects (`.fx`) and the files they include (`.fxh`) |
+
+Restart ProsperoEden after adding files: the list is read when the menu opens. A ReShade `.ini` preset does not load as it is; write its effects into a `.fxp` chain instead (below). A preset file of your own in that folder is listed beside them by its name: its `chain=` line names the effects in order, each with its technique and values (`Bloom.fx|Bloom|Radius=1.2,Amount=0.25;Sharpen.fx|Sharpen|Amount=0.75`). An effect it names that the console does not have is left out.
+
+- It is drawn by the **Vulkan** renderer; with OpenGL the game shows as it is.
+- It applies when a game starts. A line at launch (`Post-processing:` in `stderr.log`) names the preset, or says why it is off.
+- Each effect costs GPU time every frame, more at higher resolutions and at 4K output. A game that is already at its limit can lose frame rate.
 
 ## Frame generation
 
@@ -70,7 +134,7 @@ The menu opens with the profile that the PS5 user in front chose last. If you us
 | Kind | What a game can have of its own |
 |---|---|
 | Video | Renderer, resolution, upscaling filter, ASTC textures, refresh rate, FPS overlay, frame generation with its target and multiplier |
-| Performance | Each of the seven switches |
+| Performance | Each of the seven switches. The game's console memory is one value for every game in **Settings > Performance > Memory**; a game's own is in the settings file ([Console memory](#console-memory)) |
 | Audio | Game volume, mute |
 | Controls | Vibration, and a button mapping of its own |
 | System | RNG seed: with a seed the game is loaded at the same place in memory at every start, which some mods need. Left and right switch between **Random** and the seed; Cross opens the keyboard to type another one. The game's own random numbers still change from start to start |
@@ -79,6 +143,8 @@ The menu opens with the profile that the PS5 user in front chose last. If you us
 The output resolution, the menu's sounds and the accessibility settings are the same for every game.
 
 ## Button mapping
+
+**Settings > Controls > Vibration strength** sets how strong the DualSense vibrates, from 25% to 100% of what a game asks for; **Vibration** turns it off altogether.
 
 **Settings > Controls > Button mapping** lists the game's buttons (A, B, X, Y, L, R, ZL, ZR, Plus, Minus and the two stick presses) with the DualSense button that presses each one. Left and right choose another DualSense button; when another game button had it, the two swap, so one DualSense button never presses two game buttons. Square puts every button back. The mapping applies to every controller.
 

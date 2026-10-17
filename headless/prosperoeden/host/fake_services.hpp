@@ -16,7 +16,7 @@ namespace pe::host
 {
 
 // A made-up library: invented titles with drawn covers, settings kept in memory.
-class FakeServices final : public ui::Services
+class FakeServices : public ui::Services
 {
   public:
     // covers_directory receives one drawn cover per sample game.
@@ -70,6 +70,13 @@ class FakeServices final : public ui::Services
     {
         return connected_controllers;
     }
+    void vibration_pulse(int percent) override
+    {
+        last_pulse = percent;
+        ++pulses;
+    }
+    int last_pulse = 0; // the vibration the menu last asked for, and how many it asked for
+    int pulses = 0;
     std::string version() override
     {
         return "v1.000.040";
@@ -260,9 +267,16 @@ class FakeServices final : public ui::Services
     const std::vector<std::string> &resolution_keys() override;
     const std::vector<std::string> &filter_labels() override;
     const std::vector<std::string> &astc_labels() override;
+    const std::vector<std::string> &post_processing_labels() override;
     const std::vector<std::string> &language_labels() override;
     std::string language_region(int language) override;
     std::string setup_details() override;
+    std::string crash_reports_folder() override { return "/data/prosperoeden/logs"; }
+    std::vector<std::string> wallpapers() override;
+    std::string wallpapers_folder() override
+    {
+        return wallpapers_directory_;
+    }
     bool folders(const std::string &directory, std::vector<std::string> *names) override;
     ui::FolderInfo folder_info(const std::string &directory) override;
     std::string files_folder() override
@@ -413,6 +427,7 @@ class FakeServices final : public ui::Services
     ui::GameSettings game_settings_;
     ui::Preferences preferences_;
     std::string saved_folder_;
+    std::string wallpapers_directory_; // <covers_directory>/wallpapers, read like the console's
     std::vector<std::uint64_t> modded_; // the games that have the sample mods
     std::vector<std::string> mods_off_{"Sharper textures"};
     std::vector<std::string> cheats_on_{"60 FPS"};
