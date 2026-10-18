@@ -64,6 +64,12 @@ cp "$root/sce_sys/"{param.json,icon0.png,pic0.dds,pic1.dds,snd0.at9} "$app/sce_s
 [[ -f $root/force-language.txt ]] && cp "$root/force-language.txt" "$app/force-language.txt"
 rm -rf "$app/ui"
 cp -a "$root/headless/prosperoeden/ui" "$app/ui"
+# MihawkGen neural frame generation weights (headless/prosperoeden/eden_services.cpp: mihawkgen_state).
+mihawkgen_weights="$root/../mihawk-framegen-review/framegen/models/network.fgw"
+if grep -qx 'EDEN_PS5_MIHAWKGEN:BOOL=ON' "$out/CMakeCache.txt" && [[ -f "$mihawkgen_weights" ]]; then
+    mkdir -p "$app/mihawkgen"
+    cp "$mihawkgen_weights" "$app/mihawkgen/network.fgw"
+fi
 # The switches the runner reads from the app folder (headless/main.cpp). Only a development
 # package gets them: the profile title otherwise takes its timed input replay instead of the
 # controller, and a release build never parses the file.

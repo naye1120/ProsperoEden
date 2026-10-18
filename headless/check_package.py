@@ -30,6 +30,8 @@ if (APP / 'language.txt').is_file():
 # are required exactly when the build put them there (tools/package-headless-native.sh).
 if (APP / 'dev-settings.txt').is_file():
     REQUIRED.add('dev-settings.txt')
+if (APP / 'mihawkgen/network.fgw').is_file():
+    REQUIRED.add('mihawkgen/network.fgw')
 RECEIPT = ROOT / 'HEADLESS_CANDIDATE.json'
 # The pinned OpenGL SDK release (tools/deps.json): digest of its manifest.sha256.
 GL_SDK_MANIFEST_SHA256 = '0d432edc9d648d6e0cccb4d5eb3db8484f10ba4b075b5ccf23edda3251b66360'
